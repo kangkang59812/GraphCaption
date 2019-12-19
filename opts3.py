@@ -14,6 +14,15 @@ def parse_opt():
                         help='path to the directory containing the boxes of att feats')
     parser.add_argument('--input_label_h5', type=str, default='/home/lkk/code/self-critical.pytorch/data/cocotalk_label.h5',
                         help='path to the h5file containing the preprocessed dataset')
+    parser.add_argument('--input_sg_dir', type=str, default='/home/lkk/code/self-critical.pytorch/data/coco_img_sg',
+                        help='scene graph')
+    parser.add_argument('--input_sg_voc', type=str, default='/home/lkk/code/self-critical.pytorch/data/coco_pred_sg_rela.npy',
+                        help='scene graph voc')
+    parser.add_argument('--input_adj', type=str, default='/home/lkk/code/self-critical.pytorch/data/coco_img_adj',
+                        help='scene graph adj')
+    parser.add_argument('--geometry_dir', type=str, default='/home/lkk/code/self-critical.pytorch/data/geometry',
+                        help='geometry')
+
     parser.add_argument('--start_from', type=str, default=None,
                         help="""continue training from saved model at this path. Path must contain files saved by previous training process: 
                         'infos.pkl'         : configuration;
@@ -25,8 +34,8 @@ def parse_opt():
                         help='Cached token file for calculating cider score during self critical training.')
 
     # Model settings
-    parser.add_argument('--caption_model', type=str, default="topdown",
-                        help='show_tell, show_attend_tell, all_img, fc, att2in, att2in2, att2all2, adaatt, adaattmo, topdown, stackatt, denseatt, transformer')
+    parser.add_argument('--caption_model', type=str, default="mngrcnn",
+                        help='mngrcnn, show_tell, show_attend_tell, all_img, fc, att2in, att2in2, att2all2, adaatt, adaattmo, topdown, stackatt, denseatt, transformer')
     parser.add_argument('--rnn_size', type=int, default=512,
                         help='size of the rnn in number of hidden nodes in each layer')
     parser.add_argument('--num_layers', type=int, default=1,

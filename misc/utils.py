@@ -50,6 +50,8 @@ def if_use_feat(caption_model):
         use_att, use_fc = False, False
     elif caption_model == 'topdown':
         use_fc, use_att = True, True
+    elif caption_model == 'mngrcnn':
+        use_fc, use_att = True, True
     else:
         use_att, use_fc = True, False
     return use_fc, use_att
@@ -302,3 +304,15 @@ def get_std_opt(model, factor=1, warmup=2000):
     #         torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
     return NoamOpt(model.model.tgt_embed[0].d_model, factor, warmup,
                    torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
+
+
+def expand_feats(inputs, count):
+    temp = []
+    for input in inputs:
+        if type(input) is list or input is None:
+            temp.append(input)
+            continue
+        expanded = input.unsqueeze(1).expand(*((input.size(0), count,) + input.size()[1:])).contiguous().\
+            view(*((input.size(0) * count,) + input.size()[1:]))
+        temp.append(expanded)
+    return temp

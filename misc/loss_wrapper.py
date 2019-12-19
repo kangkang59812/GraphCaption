@@ -14,11 +14,13 @@ class LossWrapper(torch.nn.Module):
             self.crit = utils.LanguageModelCriterion()
         self.rl_crit = utils.RewardCriterion()
 
-    def forward(self, fc_feats, att_feats, labels, masks, att_masks, gts, gt_indices,
-                sc_flag):
+    def forward(self, fc_feats, att_feats, obj_label, rela, geometry,
+                adj1, adj2, adj3, labels, masks, att_masks, rela_masks,
+                gts, gt_indices, sc_flag):
         out = {}
         if not sc_flag:
-            loss = self.crit(self.model(fc_feats, att_feats,
+            loss = self.crit(self.model(fc_feats, att_feats, obj_label, rela, geometry,
+                                        adj1, adj2, adj3, labels, att_masks, rela_masks,
                                         labels, att_masks), labels[:, 1:], masks[:, 1:])
         else:
             self.model.eval()

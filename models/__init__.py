@@ -14,6 +14,8 @@ from .FCModel import FCModel
 from .OldModel import ShowAttendTellModel, AllImgModel
 from .AttModel import *
 from .TransformerModel import TransformerModel
+from .VSUAModel import VSUAModel
+from .MNGrcnn import MNGrcnn
 
 
 def setup(opt):
@@ -51,6 +53,13 @@ def setup(opt):
     # Transformer
     elif opt.caption_model == 'transformer':
         model = TransformerModel(opt)
+
+    elif opt.caption_model == 'vsua':
+        model = VSUAModel(opt)
+
+    elif opt.caption_model == 'mngrcnn':
+        model = MNGrcnn(opt)
+
     else:
         raise Exception(
             "Caption model not supported: {}".format(opt.caption_model))

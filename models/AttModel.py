@@ -74,7 +74,7 @@ class AttModel(CaptionModel):
         self.use_bn = getattr(opt, 'use_bn', 0)
 
         self.ss_prob = 0.0  # Schedule sampling probability
-
+        # +1 ??
         self.embed = nn.Sequential(nn.Embedding(self.vocab_size + 1, self.input_encoding_size),
                                    nn.ReLU(),
                                    nn.Dropout(self.drop_prob_lm))
@@ -87,7 +87,7 @@ class AttModel(CaptionModel):
              nn.ReLU(),
              nn.Dropout(self.drop_prob_lm)) +
             ((nn.BatchNorm1d(self.rnn_size),) if self.use_bn == 2 else ())))
-
+        # 最终输出层，只用1层全连接
         self.logit_layers = getattr(opt, 'logit_layers', 1)
         if self.logit_layers == 1:
             self.logit = nn.Linear(self.rnn_size, self.vocab_size + 1)
@@ -96,6 +96,7 @@ class AttModel(CaptionModel):
             ), nn.Dropout(0.5)] for _ in range(opt.logit_layers - 1)]
             self.logit = nn.Sequential(
                 *(reduce(lambda x, y: x+y, self.logit) + [nn.Linear(self.rnn_size, self.vocab_size + 1)]))
+        # 计算attention用的
         self.ctx2att = nn.Linear(self.rnn_size, self.att_hid_size)
 
         # For remove bad endding

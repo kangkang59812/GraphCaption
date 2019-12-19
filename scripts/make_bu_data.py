@@ -15,9 +15,9 @@ import argparse
 parser = argparse.ArgumentParser()
 
 # output_dir
-parser.add_argument('--downloaded_feats', default='/home/lkk/datasets/trainval_36',
+parser.add_argument('--downloaded_feats', default='/home/lkk/datasets/test2014',
                     help='downloaded feature directory')
-parser.add_argument('--output_dir', default='data/cocobu',
+parser.add_argument('--output_dir', default='data/testcocobu',
                     help='output feature files')
 
 args = parser.parse_args()
@@ -28,14 +28,23 @@ csv.field_size_limit(sys.maxsize)
 FIELDNAMES = ['image_id', 'image_w', 'image_h',
               'num_boxes', 'boxes', 'features']
 # infiles = ['karpathy_test_resnet101_faster_rcnn_genome.tsv',
-#           'karpathy_val_resnet101_faster_rcnn_genome.tsv',\
-#           'karpathy_train_resnet101_faster_rcnn_genome.tsv.0', \
+#            'karpathy_val_resnet101_faster_rcnn_genome.tsv',
+#            'karpathy_train_resnet101_faster_rcnn_genome.tsv.0',
 #            'karpathy_train_resnet101_faster_rcnn_genome.tsv.1']
-infiles = ['trainval_resnet101_faster_rcnn_genome_36.tsv']
-# os.makedirs(args.output_dir+'_att')
-# os.makedirs(args.output_dir+'_fc')
-# os.makedirs(args.output_dir+'_box')
 
+infiles = ['test2014_resnet101_faster_rcnn_genome.tsv.0',
+           'test2014_resnet101_faster_rcnn_genome.tsv.1',
+           'test2014_resnet101_faster_rcnn_genome.tsv.2']
+
+
+# infiles = ['trainval_resnet101_faster_rcnn_genome_36.tsv']
+os.makedirs(args.output_dir+'_att')
+os.makedirs(args.output_dir+'_fc')
+os.makedirs(args.output_dir+'_box')
+
+d1 = 0
+d2 = 0
+d3 = 0
 for infile in infiles:
     print('Reading ' + infile)
     with open(os.path.join(args.downloaded_feats, infile), "r+b") as tsv_in_file:
@@ -43,6 +52,8 @@ for infile in infiles:
             tsv_in_file, delimiter='\t', fieldnames=FIELDNAMES)
         for item in reader:
             item['image_id'] = int(item['image_id'])
+            if item['image_id'] in [300104, 147295, 321486]:
+                continue
             item['num_boxes'] = int(item['num_boxes'])
             for field in ['boxes', 'features']:
                 item[field] = np.frombuffer(base64.decodestring(item[field]),

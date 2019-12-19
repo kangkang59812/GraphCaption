@@ -118,11 +118,14 @@ class AttModel(CaptionModel):
         self.fc_feat_size = opt.fc_feat_size
         self.att_feat_size = opt.att_feat_size
         self.att_hid_size = opt.att_hid_size
+        self.obj_voc_size = opt.obj_voc_size
+        self.rela_voc_size = opt.rela_voc_size
+        self.geometry_size = opt.geometry_size
 
         self.use_bn = getattr(opt, 'use_bn', 0)
 
         self.ss_prob = 0.0  # Schedule sampling probability
-        # +1 for index 0, 
+        # +1 for index 0,
         self.embed = nn.Sequential(nn.Embedding(self.vocab_size + 1, self.input_encoding_size),
                                    nn.ReLU(),
                                    nn.Dropout(self.drop_prob_lm))
@@ -135,6 +138,21 @@ class AttModel(CaptionModel):
              nn.ReLU(),
              nn.Dropout(self.drop_prob_lm)) +
             ((nn.BatchNorm1d(self.rnn_size),) if self.use_bn == 2 else ())))
+        self.obj_embedding = nn.Sequential(nn.Embedding(self.obj_voc_size+1, self.input_encoding_size),
+                                           nn.ReLU(),
+                                           nn.Dropout(self.drop_prob_lm))
+        self.rela_embedding = nn.Sequential(nn.Embedding(self.rela_voc_size+1, self.input_encoding_size),
+                                            nn.ReLU(),
+                                            nn.Dropout(self.drop_prob_lm))
+
+        self.geometry_embedding = nn.Sequential(nn.Linear(self.geometry_size, self.rnn_size),
+                                                nn.ReLU(),
+                                                nn.Dropout(self.drop_prob_lm))
+
+        self.s_gcnn = GRCNN(self.rnn_size, self.rnn_size, 3)
+
+        self.v_gcnn = GRCNN(self.att_feat_size, self.rnn_size, 3)
+
         # 最终输出层，只用1层全连接
         self.logit_layers = getattr(opt, 'logit_layers', 1)
         if self.logit_layers == 1:
@@ -165,19 +183,23 @@ class AttModel(CaptionModel):
             att_masks = att_masks[:, :max_len].contiguous()
         return att_feats, att_masks
 
-    def _prepare_feature(self, fc_feats, att_feats, att_masks):
+    def _prepare_feature(self, fc_feats, att_feats, obj_label, rela, geometry, att_masks):
         att_feats, att_masks = self.clip_att(att_feats, att_masks)
 
         # embed fc and att feats
         fc_feats = self.fc_embed(fc_feats)
         att_feats = pack_wrapper(self.att_embed, att_feats, att_masks)
-
+        obj2vec = self.obj_embedding(obj_label)
+        rela2vec = self.rela_embedding(rela)
+        geometry_feats = self.geometry_embedding(geometry)
         # Project the attention feats first to reduce memory and computation comsumptions.
-        p_att_feats = self.ctx2att(att_feats)
+        # p_att_feats = self.ctx2att(att_feats)
 
-        return fc_feats, att_feats, p_att_feats, att_masks
+        return fc_feats, att_feats, obj2vec, rela2vec, geometry_feats, att_masks
 
-    def _forward(self, fc_feats, att_feats, seq, att_masks=None):
+    def _forward(self, fc_feats, att_feats, obj_label, rela, geometry,
+                 adj1, adj2, adj3, rela_masks, seq, att_masks=None):
+
         batch_size = fc_feats.size(0)
         state = self.init_hidden(batch_size)
 
@@ -185,9 +207,14 @@ class AttModel(CaptionModel):
             batch_size, seq.size(1) - 1, self.vocab_size+1)
 
         # Prepare the features
-        p_fc_feats, p_att_feats, pp_att_feats, p_att_masks = self._prepare_feature(
-            fc_feats, att_feats, att_masks)
+        p_fc_feats, p_att_feats, p_obj2vec, p_rela2vec, p_geometry, p_att_masks = self._prepare_feature(
+            fc_feats, att_feats, obj_label, rela, geometry, att_masks)
         # pp_att_feats is used for attention, we cache it in advance to reduce computation cost
+        gcn_obj2vec, gcn_rela2vec = self.s_gcnn(
+            p_obj2vec, p_rela2vec, adj1, adj2, adj3)
+
+        gcn_att_feats, gcn_geometry = self.v_gcnn(
+            p_att_feats, p_geometry, adj1, adj2, adj3)
 
         for i in range(seq.size(1) - 1):
             if self.training and i >= 1 and self.ss_prob > 0.0:  # otherwiste no need to sample
@@ -364,12 +391,13 @@ class AttModel(CaptionModel):
 
 
 class GRCNN(nn.Module):
-        # def __init__(self, fea_size, dropout=False, gate_width=1, use_kernel_function=False):
-    def __init__(self, in_channels):
+    def __init__(self, node_dim=512, rela_dim=512, step=3):
         super(GRCNN, self).__init__()
-        self.dim = 1024
+        self.node_dim = node_dim
+        self.rela_dim = rela_dim
         self.feat_update_step = 3
 
+        # to do
         num_classes_obj = 151
         num_classes_pred = 51
 

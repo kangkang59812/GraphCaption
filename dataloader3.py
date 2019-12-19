@@ -390,7 +390,7 @@ class DataLoader(data.Dataset):
         sg_data = self.sg_loader.get(str(self.info['images'][ix]['id']))
         adj = self.adj_loader.get(str(self.info['images'][ix]['id']))
         geometry = np.random.rand(adj['adj1'].shape[0], 4)
-        rela = sg_data['rela_matrix'][:, 2].astype(np.int)+1
+        rela = sg_data['rela_matrix'][:, 2].astype(np.int)-408+1
         obj_label = sg_data['obj_attr'][:, 1].astype(np.int)+1
         return (fc_feat,
                 att_feat, seq, adj, geometry, rela, obj_label,

@@ -50,6 +50,12 @@ def parse_opt():
                         help='2048 for resnet, 4096 for vgg')
     parser.add_argument('--att_feat_size', type=int, default=2048,
                         help='2048 for resnet, 512 for vgg')
+    parser.add_argument('--obj_voc_size', type=int, default=305,
+                        help='305类')
+    parser.add_argument('--rela_voc_size', type=int, default=64,
+                        help='64种关系')
+    parser.add_argument('--geometry_size', type=int, default=4,
+                        help='几何关系维度')
     parser.add_argument('--logit_layers', type=int, default=1,
                         help='number of layers in the RNN')
 

@@ -8,10 +8,10 @@ import lmdb
 import os
 import numpy as np
 import random
-
 import torch
 import torch.utils.data as data
 import six
+import pdb
 exclude = [481399, 110026, 317035, 563175, 516124, 317431, 510418, 514772, 88173, 84548, 224733,
            37157, 447337, 496065, 515062, 560360, 163361, 83730, 76138, 423141, 406531, 46422, 295626,
            43347, 322211, 222990, 350067, 391689, 180515, 504382, 156002, 453348, 90365, 119718]
@@ -34,7 +34,9 @@ class HybridLoader:
         if 'sg' in db_path:
             self.loader = lambda x: np.load(x, encoding='latin1').item()
         if 'adj' in db_path:
-            self.loader = lambda x: np.load(x)
+            # 必须是对象，不可以是file
+            self.loader = lambda x: (np.load(x)['adj1'], np.load(x)[
+                                     'adj2'], np.load(x)['adj3'])
         if 'geometry' in db_path:
             self.loader = lambda x: np.load(x)['feats']
 
@@ -221,9 +223,9 @@ class DataLoader(data.Dataset):
 
             fc_batch.append(tmp_fc)
             att_batch.append(tmp_att)
-            adj1_batch.append(tmp_adj['adj1'])  # adj1
-            adj2_batch.append(tmp_adj['adj2'])  # adj2
-            adj3_batch.append(tmp_adj['adj3'])  # adj3
+            adj1_batch.append(tmp_adj[0])  # adj1
+            adj2_batch.append(tmp_adj[1])  # adj2
+            adj3_batch.append(tmp_adj[2])  # adj3
             geometry.append(tmp_geometry)
             rela_label.append(tmp_rela_label)
             obj_label.append(tmp_obj_label)
@@ -414,10 +416,12 @@ class DataLoader(data.Dataset):
             seq = self.get_captions(ix, self.seq_per_img)
         else:
             seq = None
-
         sg_data = self.sg_loader.get(str(self.info['images'][ix]['id']))
+
         adj = self.adj_loader.get(str(self.info['images'][ix]['id']))
+
         geometry = self.geometry_loader.get(str(self.info['images'][ix]['id']))
+
         rela_label = sg_data['rela_matrix'][:, 2].astype(np.int)-408+1
         obj_label = sg_data['obj_attr'][:, 1].astype(np.int)+1
         if obj_label.shape[0] != att_feat.shape[0]:

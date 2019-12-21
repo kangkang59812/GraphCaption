@@ -14,10 +14,10 @@ import models
 from dataloader import *
 import dataloader
 import skimage.io
-import eval_utils
+import eval_utils1 as eval_utils
 import misc.utils as utils
 from misc.rewards import init_scorer, get_self_critical_reward
-from misc.loss_wrapper import LossWrapper
+from misc.loss_wrapper1 import LossWrapper
 import h5py
 import json
 

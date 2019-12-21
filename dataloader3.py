@@ -471,7 +471,7 @@ class BlobFetcher():
                                                      self.dataloader.split_ix[self.split][self.dataloader.iterators[self.split]:]),
                                                  shuffle=False,
                                                  pin_memory=True,
-                                                 num_workers=0,  # 4 is usually enough
+                                                 num_workers=4,  # 4 is usually enough
                                                  collate_fn=lambda x: x[0]))
 
     def _get_next_minibatch_inds(self):

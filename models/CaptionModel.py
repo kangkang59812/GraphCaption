@@ -15,6 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import *
 import misc.utils as utils
+from six.moves import reduce
 
 
 class CaptionModel(nn.Module):

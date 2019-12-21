@@ -78,7 +78,7 @@ def parse_opt():
                         help='minibatch size')
     parser.add_argument('--grad_clip', type=float, default=0.1,  # 5.,
                         help='clip gradients at this value')
-    parser.add_argument('--drop_prob_lm', type=float, default=0,
+    parser.add_argument('--drop_prob_lm', type=float, default=0.5,
                         help='strength of dropout in the Language Model RNN')
     parser.add_argument('--self_critical_after', type=int, default=-1,
                         help='After what epoch do we start finetuning the CNN? (-1 = disable; never finetune, 0 = finetune from start)')
@@ -100,7 +100,7 @@ def parse_opt():
     # Optimization: for the Language Model
     parser.add_argument('--optim', type=str, default='adam',
                         help='what update to use? rmsprop|sgd|sgdmom|adagrad|adam')
-    parser.add_argument('--learning_rate', type=float, default=2e-4,
+    parser.add_argument('--learning_rate', type=float, default=4e-4,
                         help='learning rate')
     parser.add_argument('--learning_rate_decay_start', type=int, default=0,
                         help='at what iteration to start decaying learning rate? (-1 = dont) (in epoch)')

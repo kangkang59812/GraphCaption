@@ -216,7 +216,8 @@ class AttModel(CaptionModel):
         rela2vec = pack_wrapper(self.rela_embedding, rela_label, rela_masks)
         #rela2vec = self.rela_embedding(rela_label)
 
-        geometry_feats = pack_wrapper(self.geometry_embedding, geometry, rela_masks)
+        geometry_feats = pack_wrapper(
+            self.geometry_embedding, geometry, rela_masks)
         #geometry_feats = self.geometry_embedding(geometry)
         # Project the attention feats first to reduce memory and computation comsumptions.
         # p_att_feats = self.ctx2att(att_feats)
@@ -224,7 +225,7 @@ class AttModel(CaptionModel):
         return fc_feats, att_feats, obj2vec, rela2vec, geometry_feats, att_masks, rela_masks
 
     def _forward(self, fc_feats, att_feats, obj_label, rela_label, rela_adj, geometry,
-                 adj1, adj2, adj3, rela_masks, seq, att_masks=None):
+                 adj1, adj2, adj3, rela_masks, seq, att_masks):
 
         batch_size = fc_feats.size(0)
         state = self.init_hidden(batch_size)
@@ -293,12 +294,32 @@ class AttModel(CaptionModel):
 
         return logprobs, state
 
-    def _sample_beam(self, fc_feats, att_feats, att_masks=None, opt={}):
+    def _sample_beam(self, fc_feats, att_feats, obj_label, rela_label, rela_adj, geometry,
+                     adj1, adj2, adj3, rela_masks, seq, att_masks, opt={}):
         beam_size = opt.get('beam_size', 10)
         batch_size = fc_feats.size(0)
 
-        p_fc_feats, p_att_feats, pp_att_feats, p_att_masks = self._prepare_feature(
-            fc_feats, att_feats, att_masks)
+        p_fc_feats, p_att_feats, p_obj2vec, p_rela2vec, p_geometry, p_att_masks, p_rela_masks = self._prepare_feature(
+            fc_feats, att_feats, obj_label, rela_label, geometry, att_masks, rela_masks)
+
+        if self.use_gcn:
+            gcn_obj2vec, gcn_rela2vec = self.s_gcnn(
+                p_obj2vec, p_rela2vec, adj1, adj2, adj3, rela_adj)
+
+            gcn_att_feats, gcn_geometry = self.v_gcnn(
+                p_att_feats, p_geometry, adj1, adj2, adj3, rela_adj)
+        else:
+            gcn_obj2vec, gcn_rela2vec = p_obj2vec, p_rela2vec
+            gcn_att_feats, gcn_geometry = p_att_feats, p_geometry
+
+        node_feats2 = torch.cat((gcn_att_feats, gcn_obj2vec), 2)
+        rela_feats2 = torch.cat((gcn_geometry, gcn_rela2vec), 2)
+
+        node_feats = pack_wrapper(self.node2merge, node_feats2, p_att_masks)
+        rela_feats = pack_wrapper(self.rela2merge, rela_feats2, p_rela_masks)
+
+        p_node_feats = pack_wrapper(self.node2att, node_feats, p_att_masks)
+        p_rela_feats = pack_wrapper(self.rela2att, rela_feats, p_rela_masks)
 
         assert beam_size <= self.vocab_size + \
             1, 'lets assume this for now, otherwise this corner case causes a few headaches down the road. can be dealt with in future if needed'
@@ -311,29 +332,41 @@ class AttModel(CaptionModel):
             state = self.init_hidden(beam_size)
             tmp_fc_feats = p_fc_feats[k:k +
                                       1].expand(beam_size, p_fc_feats.size(1))
-            tmp_att_feats = p_att_feats[k:k+1].expand(
-                *((beam_size,)+p_att_feats.size()[1:])).contiguous()
-            tmp_p_att_feats = pp_att_feats[k:k+1].expand(
-                *((beam_size,)+pp_att_feats.size()[1:])).contiguous()
-            tmp_att_masks = p_att_masks[k:k+1].expand(*((beam_size,)+p_att_masks.size()[
-                                                      1:])).contiguous() if att_masks is not None else None
+            # tmp_att_feats = p_att_feats[k:k+1].expand(*((beam_size,)+p_att_feats.size()[1:])).contiguous()
+            # tmp_obj2vec = p_obj2vec[k:k+1].expand(*((beam_size,)+p_obj2vec.size()[1:])).contiguous()
+            # tmp_rela2vec = p_rela2vec[k:k+1].expand(*((beam_size,)+p_rela2vec.size()[1:])).contiguous()
+            # tmp_geometry = p_geometry[k:k+1].expand(*((beam_size,)+p_geometry.size()[1:])).contiguous()
+            tmp_node_feats = node_feats[k:k+1].expand(
+                *((beam_size,)+node_feats.size()[1:])).contiguous()
+            tmp_p_node_feats = p_node_feats[k:k+1].expand(
+                *((beam_size,)+p_node_feats.size()[1:])).contiguous()
+            tmp_rela_feats = rela_feats[k:k+1].expand(
+                *((beam_size,)+rela_feats.size()[1:])).contiguous()
+            tmp_p_rela_feats = p_rela_feats[k:k+1].expand(
+                *((beam_size,)+p_rela_feats.size()[1:])).contiguous()
+
+            tmp_rela_masks = p_rela_masks[k:k+1].expand(
+                *((beam_size,)+p_rela_masks.size()[1:])).contiguous()
+            tmp_att_masks = p_att_masks[k:k+1].expand(
+                *((beam_size,)+p_att_masks.size()[1:])).contiguous()
 
             for t in range(1):
                 if t == 0:  # input <bos>
                     it = fc_feats.new_zeros([beam_size], dtype=torch.long)
 
                 logprobs, state = self.get_logprobs_state(
-                    it, tmp_fc_feats, tmp_att_feats, tmp_p_att_feats, tmp_att_masks, state)
+                    it, tmp_fc_feats, tmp_node_feats, tmp_p_node_feats, tmp_rela_feats, tmp_p_rela_feats, tmp_att_masks, tmp_rela_masks, state)
 
             self.done_beams[k] = self.beam_search(
-                state, logprobs, tmp_fc_feats, tmp_att_feats, tmp_p_att_feats, tmp_att_masks, opt=opt)
+                state, logprobs, tmp_fc_feats, tmp_node_feats, tmp_p_node_feats, tmp_rela_feats, tmp_p_rela_feats, tmp_att_masks, tmp_rela_masks, opt=opt)
             # the first beam has highest cumulative score
             seq[:, k] = self.done_beams[k][0]['seq']
             seqLogprobs[:, k] = self.done_beams[k][0]['logps']
         # return the samples and their log likelihoods
         return seq.transpose(0, 1), seqLogprobs.transpose(0, 1)
 
-    def _sample(self, fc_feats, att_feats, att_masks=None, opt={}):
+    def _sample(self, fc_feats, att_feats, obj_label, rela_label, rela_adj, geometry,
+                adj1, adj2, adj3, rela_masks, seq, att_masks, opt={}):
 
         sample_method = opt.get('sample_method', 'greedy')
         beam_size = opt.get('beam_size', 1)
@@ -342,13 +375,33 @@ class AttModel(CaptionModel):
         block_trigrams = opt.get('block_trigrams', 0)
         remove_bad_endings = opt.get('remove_bad_endings', 0)
         if beam_size > 1:
-            return self._sample_beam(fc_feats, att_feats, att_masks, opt)
+            return self._sample_beam(fc_feats, att_feats, obj_label, rela_label, rela_adj, geometry,
+                                     adj1, adj2, adj3, rela_masks, seq, att_masks, opt)
 
         batch_size = fc_feats.size(0)
         state = self.init_hidden(batch_size)
 
-        p_fc_feats, p_att_feats, pp_att_feats, p_att_masks = self._prepare_feature(
-            fc_feats, att_feats, att_masks)
+        p_fc_feats, p_att_feats, p_obj2vec, p_rela2vec, p_geometry, p_att_masks, p_rela_masks = self._prepare_feature(
+            fc_feats, att_feats, obj_label, rela_label, geometry, att_masks, rela_masks)
+
+        if self.use_gcn:
+            gcn_obj2vec, gcn_rela2vec = self.s_gcnn(
+                p_obj2vec, p_rela2vec, adj1, adj2, adj3, rela_adj)
+
+            gcn_att_feats, gcn_geometry = self.v_gcnn(
+                p_att_feats, p_geometry, adj1, adj2, adj3, rela_adj)
+        else:
+            gcn_obj2vec, gcn_rela2vec = p_obj2vec, p_rela2vec
+            gcn_att_feats, gcn_geometry = p_att_feats, p_geometry
+
+        node_feats2 = torch.cat((gcn_att_feats, gcn_obj2vec), 2)
+        rela_feats2 = torch.cat((gcn_geometry, gcn_rela2vec), 2)
+
+        node_feats = pack_wrapper(self.node2merge, node_feats2, p_att_masks)
+        rela_feats = pack_wrapper(self.rela2merge, rela_feats2, p_rela_masks)
+
+        p_node_feats = pack_wrapper(self.node2att, node_feats, p_att_masks)
+        p_rela_feats = pack_wrapper(self.rela2att, rela_feats, p_rela_masks)
 
         trigrams = []  # will be a list of batch_size dictionaries
 
@@ -360,7 +413,7 @@ class AttModel(CaptionModel):
                 it = fc_feats.new_zeros(batch_size, dtype=torch.long)
 
             logprobs, state = self.get_logprobs_state(
-                it, p_fc_feats, p_att_feats, pp_att_feats, p_att_masks, state)
+                it, p_fc_feats, node_feats, p_node_feats, rela_feats, p_rela_feats,  p_att_masks, p_rela_masks, state)
 
             if decoding_constraint and t > 0:
                 tmp = logprobs.new_zeros(logprobs.size())

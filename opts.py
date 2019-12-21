@@ -58,7 +58,7 @@ def parse_opt():
     # Optimization: General
     parser.add_argument('--max_epochs', type=int, default=30,
                         help='number of epochs')
-    parser.add_argument('--batch_size', type=int, default=256,
+    parser.add_argument('--batch_size', type=int, default=64,
                         help='minibatch size')
     parser.add_argument('--grad_clip', type=float, default=0.1,  # 5.,
                         help='clip gradients at this value')
@@ -70,7 +70,7 @@ def parse_opt():
                         help='number of captions to sample for each image during training. Done for efficiency since CNN forward pass is expensive. E.g. coco has 5 sents/image')
 
     # Sample related
-    parser.add_argument('--beam_size', type=int, default=1,
+    parser.add_argument('--beam_size', type=int, default=3,
                         help='used when sample_method = greedy, indicates number of beams in beam search. Usually 2 or 3 works well. More is not better. Set this to 1 for faster runtime but a bit worse performance.')
     parser.add_argument('--max_length', type=int, default=20,
                         help='Maximum length during sampling')
@@ -124,7 +124,7 @@ def parse_opt():
     # Evaluation/Checkpointing
     parser.add_argument('--val_images_use', type=int, default=5000,
                         help='how many images to use when periodically evaluating the validation loss? (-1 = all)')
-    parser.add_argument('--save_checkpoint_every', type=int, default=2000,
+    parser.add_argument('--save_checkpoint_every', type=int, default=10,
                         help='how often to save a model checkpoint (in iterations)?')
     parser.add_argument('--save_history_ckpt', type=int, default=1,
                         help='If save checkpoints at every save point')

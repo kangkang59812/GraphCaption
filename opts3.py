@@ -20,7 +20,7 @@ def parse_opt():
                         help='scene graph voc')
     parser.add_argument('--input_adj', type=str, default='/home/lkk/code/self-critical.pytorch/data/coco_img_adj',
                         help='scene graph adj')
-    parser.add_argument('--geometry_dir', type=str, default='/home/lkk/code/self-critical.pytorch/data/geometry',
+    parser.add_argument('--geometry_dir', type=str, default='/home/lkk/code/self-critical.pytorch/data/cocobu_geometry',
                         help='geometry')
 
     parser.add_argument('--start_from', type=str, default=None,
@@ -54,11 +54,12 @@ def parse_opt():
                         help='305类')
     parser.add_argument('--rela_voc_size', type=int, default=64,
                         help='64种关系')
-    parser.add_argument('--geometry_size', type=int, default=4,
+    parser.add_argument('--geometry_size', type=int, default=8,
                         help='几何关系维度')
     parser.add_argument('--logit_layers', type=int, default=1,
                         help='number of layers in the RNN')
-
+    parser.add_argument('--use_gcn', type=bool, default=False,
+                        help='use gcn')
     parser.add_argument('--use_bn', type=int, default=0,
                         help='If 1, then do batch_normalization first in att_embed, if 2 then do bn both in the beginning and the end of att_embed')
 
@@ -73,11 +74,11 @@ def parse_opt():
     # Optimization: General
     parser.add_argument('--max_epochs', type=int, default=30,
                         help='number of epochs')
-    parser.add_argument('--batch_size', type=int, default=256,
+    parser.add_argument('--batch_size', type=int, default=64,
                         help='minibatch size')
     parser.add_argument('--grad_clip', type=float, default=0.1,  # 5.,
                         help='clip gradients at this value')
-    parser.add_argument('--drop_prob_lm', type=float, default=0.5,
+    parser.add_argument('--drop_prob_lm', type=float, default=0,
                         help='strength of dropout in the Language Model RNN')
     parser.add_argument('--self_critical_after', type=int, default=-1,
                         help='After what epoch do we start finetuning the CNN? (-1 = disable; never finetune, 0 = finetune from start)')
@@ -85,7 +86,7 @@ def parse_opt():
                         help='number of captions to sample for each image during training. Done for efficiency since CNN forward pass is expensive. E.g. coco has 5 sents/image')
 
     # Sample related
-    parser.add_argument('--beam_size', type=int, default=1,
+    parser.add_argument('--beam_size', type=int, default=3,
                         help='used when sample_method = greedy, indicates number of beams in beam search. Usually 2 or 3 works well. More is not better. Set this to 1 for faster runtime but a bit worse performance.')
     parser.add_argument('--max_length', type=int, default=20,
                         help='Maximum length during sampling')
@@ -99,7 +100,7 @@ def parse_opt():
     # Optimization: for the Language Model
     parser.add_argument('--optim', type=str, default='adam',
                         help='what update to use? rmsprop|sgd|sgdmom|adagrad|adam')
-    parser.add_argument('--learning_rate', type=float, default=5e-4,
+    parser.add_argument('--learning_rate', type=float, default=2e-4,
                         help='learning rate')
     parser.add_argument('--learning_rate_decay_start', type=int, default=0,
                         help='at what iteration to start decaying learning rate? (-1 = dont) (in epoch)')
@@ -147,7 +148,7 @@ def parse_opt():
                         help='directory to store checkpointed models')
     parser.add_argument('--language_eval', type=int, default=1,
                         help='Evaluate language as well (1 = yes, 0 = no)? BLEU/CIDEr/METEOR/ROUGE_L? requires coco-caption code from Github.')
-    parser.add_argument('--losses_log_every', type=int, default=25,
+    parser.add_argument('--losses_log_every', type=int, default=10,
                         help='How often do we snapshot losses, for inclusion in the progress dump? (0 = disable)')
     parser.add_argument('--load_best_score', type=int, default=1,
                         help='Do we load previous best score when resuming training.')
@@ -189,7 +190,7 @@ def add_eval_options(parser):
                         help='if > 0 then overrule, otherwise load from checkpoint.')
     parser.add_argument('--num_images', type=int, default=-1,
                         help='how many images to use when periodically evaluating the loss? (-1 = all)')
-    parser.add_argument('--language_eval', type=int, default=0,
+    parser.add_argument('--language_eval', type=int, default=1,
                         help='Evaluate language as well (1 = yes, 0 = no)? BLEU/CIDEr/METEOR/ROUGE_L? requires coco-caption code from Github.')
     parser.add_argument('--dump_images', type=int, default=1,
                         help='Dump images into vis/imgs folder for vis? (1=yes,0=no)')
@@ -201,7 +202,7 @@ def add_eval_options(parser):
     # Sampling options
     parser.add_argument('--sample_method', type=str, default='greedy',
                         help='greedy; sample; gumbel; top<int>, top<0-1>')
-    parser.add_argument('--beam_size', type=int, default=2,
+    parser.add_argument('--beam_size', type=int, default=3,
                         help='indicates number of beams in beam search. Usually 2 or 3 works well. More is not better. Set this to 1 for faster runtime but a bit worse performance.')
     parser.add_argument('--max_length', type=int, default=20,
                         help='Maximum length during sampling')

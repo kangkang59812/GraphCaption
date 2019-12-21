@@ -54,10 +54,16 @@ class Attention(nn.Module):
         self.alpha_net1 = nn.Linear(self.att_hid_size, 1)
         self.alpha_net2 = nn.Linear(self.att_hid_size, 1)
 
-    def forward(self, h, node_feats, rela_feats, att_masks=None, rela_masks=None):
-        # The p_att_feats here is already projected
-        node_size = node_feats.shape[1]
-        rela_size = rela_feats.shape[1]
+    def forward(self, h, node_feats, p_node_feats, rela_feats, p_rela_feats, att_masks=None, rela_masks=None):
+        node_size = node_feats.numel() // node_feats.size(0) // node_feats.size(-1)
+        node = p_node_feats.view(-1, node_size, self.att_hid_size)
+
+        rela_size = rela_feats.numel() // rela_feats.size(0) // rela_feats.size(-1)
+        rela = p_rela_feats.view(-1, rela_size, self.att_hid_size)
+
+        # The p_att_feats here is already projected, 单卡这样
+        # node_size = node_feats.shape[1]
+        # rela_size = rela_feats.shape[1]
 
         node_h = self.h2node(h)
         rela_h = self.h2rela(h)
@@ -65,8 +71,8 @@ class Attention(nn.Module):
         node_h = node_h.unsqueeze(1).expand_as(node_feats)
         rela_h = rela_h.unsqueeze(1).expand_as(rela_feats)
         # batch * att_size * att_hid_size
-        node_dot = node_feats + node_h
-        rela_dot = rela_feats + rela_h
+        node_dot = p_node_feats + node_h
+        rela_dot = p_rela_feats + rela_h
 
         # batch * att_size * att_hid_size
         node_dot = torch.tanh(node_dot)
@@ -109,7 +115,7 @@ class AttModel(CaptionModel):
         super(AttModel, self).__init__()
         self.vocab_size = opt.vocab_size
         self.input_encoding_size = opt.input_encoding_size
-        #self.rnn_type = opt.rnn_type
+        # self.rnn_type = opt.rnn_type
         self.rnn_size = opt.rnn_size
         self.num_layers = opt.num_layers
         self.drop_prob_lm = opt.drop_prob_lm
@@ -138,10 +144,10 @@ class AttModel(CaptionModel):
              nn.ReLU(),
              nn.Dropout(self.drop_prob_lm)) +
             ((nn.BatchNorm1d(self.rnn_size),) if self.use_bn == 2 else ())))
-        self.obj_embedding = nn.Sequential(nn.Embedding(self.obj_voc_size+1, self.input_encoding_size),
+        self.obj_embedding = nn.Sequential(nn.Embedding(self.obj_voc_size+1, self.input_encoding_size, padding_idx=0),
                                            nn.ReLU(),
                                            nn.Dropout(self.drop_prob_lm))
-        self.rela_embedding = nn.Sequential(nn.Embedding(self.rela_voc_size+1, self.input_encoding_size),
+        self.rela_embedding = nn.Sequential(nn.Embedding(self.rela_voc_size+1, self.input_encoding_size, padding_idx=0),
                                             nn.ReLU(),
                                             nn.Dropout(self.drop_prob_lm))
 
@@ -149,9 +155,9 @@ class AttModel(CaptionModel):
                                                 nn.ReLU(),
                                                 nn.Dropout(self.drop_prob_lm))
 
-        self.s_gcnn = GRCNN(self.rnn_size, self.rnn_size, 3)
+        # self.s_gcnn = GRCNN(self.rnn_size, self.rnn_size, 3)
 
-        self.v_gcnn = GRCNN(self.att_feat_size, self.rnn_size, 3)
+        # self.v_gcnn = GRCNN(self.att_feat_size, self.rnn_size, 3)
 
         # 最终输出层，只用1层全连接
         self.logit_layers = getattr(opt, 'logit_layers', 1)
@@ -163,7 +169,17 @@ class AttModel(CaptionModel):
             self.logit = nn.Sequential(
                 *(reduce(lambda x, y: x+y, self.logit) + [nn.Linear(self.rnn_size, self.vocab_size + 1)]))
         # 计算attention用的
-        self.ctx2att = nn.Linear(self.rnn_size, self.att_hid_size)
+        self.node2merge = nn.Sequential(nn.Linear(self.rnn_size*2, self.rnn_size),
+                                        nn.ReLU(),
+                                        nn.Dropout(self.drop_prob_lm))
+
+        self.node2att = nn.Linear(self.rnn_size, self.att_hid_size)
+
+        self.rela2merge = nn.Sequential(nn.Linear(self.rnn_size*2, self.rnn_size),
+                                        nn.ReLU(),
+                                        nn.Dropout(self.drop_prob_lm))
+
+        self.rela2att = nn.Linear(self.rnn_size, self.att_hid_size)
 
         # For remove bad endding
         self.vocab = opt.vocab
@@ -183,21 +199,31 @@ class AttModel(CaptionModel):
             att_masks = att_masks[:, :max_len].contiguous()
         return att_feats, att_masks
 
-    def _prepare_feature(self, fc_feats, att_feats, obj_label, rela, geometry, att_masks):
+    def _prepare_feature(self, fc_feats, att_feats, obj_label, rela_label, geometry, att_masks, rela_masks):
         att_feats, att_masks = self.clip_att(att_feats, att_masks)
+        obj_label, att_masks = self.clip_att(obj_label, att_masks)
 
+        rela_label, rela_masks = self.clip_att(rela_label, rela_masks)
+        geometry, rela_masks = self.clip_att(geometry, rela_masks)
         # embed fc and att feats
         fc_feats = self.fc_embed(fc_feats)
+        # wrapper后，补0的位置通过映射后还是0
         att_feats = pack_wrapper(self.att_embed, att_feats, att_masks)
-        obj2vec = self.obj_embedding(obj_label)
-        rela2vec = self.rela_embedding(rela)
-        geometry_feats = self.geometry_embedding(geometry)
+
+        obj2vec = pack_wrapper(self.obj_embedding, obj_label, att_masks)
+        #obj2vec = self.obj_embedding(obj_label)
+
+        rela2vec = pack_wrapper(self.rela_embedding, rela_label, rela_masks)
+        #rela2vec = self.rela_embedding(rela_label)
+
+        geometry_feats = pack_wrapper(self.geometry_embedding, geometry, rela_masks)
+        #geometry_feats = self.geometry_embedding(geometry)
         # Project the attention feats first to reduce memory and computation comsumptions.
         # p_att_feats = self.ctx2att(att_feats)
 
-        return fc_feats, att_feats, obj2vec, rela2vec, geometry_feats, att_masks
+        return fc_feats, att_feats, obj2vec, rela2vec, geometry_feats, att_masks, rela_masks
 
-    def _forward(self, fc_feats, att_feats, obj_label, rela, geometry,
+    def _forward(self, fc_feats, att_feats, obj_label, rela_label, rela_adj, geometry,
                  adj1, adj2, adj3, rela_masks, seq, att_masks=None):
 
         batch_size = fc_feats.size(0)
@@ -207,14 +233,27 @@ class AttModel(CaptionModel):
             batch_size, seq.size(1) - 1, self.vocab_size+1)
 
         # Prepare the features
-        p_fc_feats, p_att_feats, p_obj2vec, p_rela2vec, p_geometry, p_att_masks = self._prepare_feature(
-            fc_feats, att_feats, obj_label, rela, geometry, att_masks)
+        p_fc_feats, p_att_feats, p_obj2vec, p_rela2vec, p_geometry, p_att_masks, p_rela_masks = self._prepare_feature(
+            fc_feats, att_feats, obj_label, rela_label, geometry, att_masks, rela_masks)
         # pp_att_feats is used for attention, we cache it in advance to reduce computation cost
-        gcn_obj2vec, gcn_rela2vec = self.s_gcnn(
-            p_obj2vec, p_rela2vec, adj1, adj2, adj3)
+        if self.use_gcn:
+            gcn_obj2vec, gcn_rela2vec = self.s_gcnn(
+                p_obj2vec, p_rela2vec, adj1, adj2, adj3, rela_adj)
 
-        gcn_att_feats, gcn_geometry = self.v_gcnn(
-            p_att_feats, p_geometry, adj1, adj2, adj3)
+            gcn_att_feats, gcn_geometry = self.v_gcnn(
+                p_att_feats, p_geometry, adj1, adj2, adj3, rela_adj)
+        else:
+            gcn_obj2vec, gcn_rela2vec = p_obj2vec, p_rela2vec
+            gcn_att_feats, gcn_geometry = p_att_feats, p_geometry
+
+        node_feats2 = torch.cat((gcn_att_feats, gcn_obj2vec), 2)
+        rela_feats2 = torch.cat((gcn_geometry, gcn_rela2vec), 2)
+
+        node_feats = pack_wrapper(self.node2merge, node_feats2, p_att_masks)
+        rela_feats = pack_wrapper(self.rela2merge, rela_feats2, p_rela_masks)
+
+        p_node_feats = pack_wrapper(self.node2att, node_feats, p_att_masks)
+        p_rela_feats = pack_wrapper(self.rela2att, rela_feats, p_rela_masks)
 
         for i in range(seq.size(1) - 1):
             if self.training and i >= 1 and self.ss_prob > 0.0:  # otherwiste no need to sample
@@ -226,7 +265,7 @@ class AttModel(CaptionModel):
                     sample_ind = sample_mask.nonzero().view(-1)
                     it = seq[:, i].data.clone()
                     # prob_prev = torch.exp(outputs[-1].data.index_select(0, sample_ind)) # fetch prev distribution: shape Nx(M+1)
-                    #it.index_copy_(0, sample_ind, torch.multinomial(prob_prev, 1).view(-1))
+                    # it.index_copy_(0, sample_ind, torch.multinomial(prob_prev, 1).view(-1))
                     # prob_prev = torch.exp(outputs[-1].data) # fetch prev distribution: shape Nx(M+1)
                     # fetch prev distribution: shape Nx(M+1)
                     prob_prev = torch.exp(outputs[:, i-1].detach())
@@ -239,17 +278,17 @@ class AttModel(CaptionModel):
                 break
 
             output, state = self.get_logprobs_state(
-                it, p_fc_feats, p_att_feats, pp_att_feats, p_att_masks, state)
+                it, p_fc_feats, node_feats, p_node_feats, rela_feats, p_rela_feats,  p_att_masks, p_rela_masks, state)
             outputs[:, i] = output
 
         return outputs
 
-    def get_logprobs_state(self, it, fc_feats, att_feats, p_att_feats, att_masks, state):
+    def get_logprobs_state(self, it, fc_feats, node_feats, p_node_feats, rela_feats, p_rela_feats, att_masks, rela_masks, state):
         # 'it' contains a word index
         xt = self.embed(it)
 
         output, state = self.core(
-            xt, fc_feats, att_feats, p_att_feats, state, att_masks)
+            xt, fc_feats, node_feats, p_node_feats, rela_feats, p_rela_feats, state, att_masks, rela_masks)
         logprobs = F.log_softmax(self.logit(output), dim=1)
 
         return logprobs, state
@@ -364,7 +403,7 @@ class AttModel(CaptionModel):
                         for j in trigrams[i][prev_two]:
                             mask[i, j] += 1
                 # Apply mask to log probs
-                #logprobs = logprobs - (mask * 1e9)
+                # logprobs = logprobs - (mask * 1e9)
                 alpha = 2.0  # = 4
                 # ln(1/2) * alpha (alpha -> infty works best)
                 logprobs = logprobs + (mask * -0.693 * alpha)
@@ -398,23 +437,26 @@ class GRCNN(nn.Module):
         self.feat_update_step = 3
 
         # to do
-        num_classes_obj = 151
-        num_classes_pred = 51
+        # num_classes_obj = 151
+        # num_classes_pred = 51
 
-        self.avgpool = nn.AdaptiveAvgPool2d(1)
-        # self.pred_feature_extractor = make_roi_relation_feature_extractor(cfg, in_channels)
+        # self.avgpool = nn.AdaptiveAvgPool2d(1)
+        # # self.pred_feature_extractor = make_roi_relation_feature_extractor(cfg, in_channels)
 
-        self.obj_embedding = nn.Sequential(
-            nn.Linear(2048, self.dim),
-            nn.ReLU(True),
-            nn.Linear(self.dim, self.dim),
-        )
-        # 输入2048，输出1024
-        self.rel_embedding = nn.Sequential(
-            nn.Linear(num_classes_pred, self.dim),
-            nn.ReLU(True),
-            nn.Linear(self.dim, self.dim),
-        )
+        # self.obj_embedding = nn.Sequential(
+        #     nn.Linear(2048, self.dim),
+        #     nn.ReLU(True),
+        #     nn.Linear(self.dim, self.dim),
+        # )
+        # # 输入2048，输出1024
+        # self.rel_embedding = nn.Sequential(
+        #     nn.Linear(num_classes_pred, self.dim),
+        #     nn.ReLU(True),
+        #     nn.Linear(self.dim, self.dim),
+        # )
+
+    def forward(self, node, rela, *adj):
+        pass
 
 
 class MNGrcnnCore(nn.Module):
@@ -428,7 +470,7 @@ class MNGrcnnCore(nn.Module):
             opt.rnn_size * 3, opt.rnn_size)  # h^1_t, \hat v
         self.attention = Attention(opt)
 
-    def forward(self, xt, fc_feats, node_feats, rela_feats, state, att_masks=None, rela_masks=None):
+    def forward(self, xt, fc_feats, node_feats, p_node_feats, rela_feats, p_rela_feats, state, att_masks=None, rela_masks=None):
         prev_h = state[0][-1]
         att_lstm_input = torch.cat([prev_h, fc_feats, xt], 1)
 
@@ -437,7 +479,7 @@ class MNGrcnnCore(nn.Module):
 
         # h_att； 融合过的节点特征，融合过的边特征
         att, rela = self.attention(
-            h_att, node_feats, rela_feats, att_masks, rela_masks)
+            h_att, node_feats, p_node_feats, rela_feats, p_rela_feats, att_masks, rela_masks)
 
         lang_lstm_input = torch.cat([att, rela, h_att], 1)
         # lang_lstm_input = torch.cat([att, F.dropout(h_att, self.drop_prob_lm, self.training)], 1) ?????
@@ -455,4 +497,5 @@ class MNGrcnn(AttModel):
     def __init__(self, opt):
         super(MNGrcnn, self).__init__(opt)
         self.num_layers = 2
+        self.use_gcn = opt.use_gcn
         self.core = MNGrcnnCore(opt)

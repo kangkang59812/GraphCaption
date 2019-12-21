@@ -12,6 +12,9 @@ import random
 import torch
 import torch.utils.data as data
 import six
+exclude = [481399, 110026, 317035, 563175, 516124, 317431, 510418, 514772, 88173, 84548, 224733,
+           37157, 447337, 496065, 515062, 560360, 163361, 83730, 76138, 423141, 406531, 46422, 295626,
+           43347, 322211, 222990, 350067, 391689, 180515, 504382, 156002, 453348, 90365, 119718]
 
 
 class HybridLoader:
@@ -32,6 +35,8 @@ class HybridLoader:
             self.loader = lambda x: np.load(x, encoding='latin1').item()
         if 'adj' in db_path:
             self.loader = lambda x: np.load(x)
+        if 'geometry' in db_path:
+            self.loader = lambda x: np.load(x)['feats']
 
         if db_path.endswith('.lmdb'):
             self.db_type = 'lmdb'
@@ -123,7 +128,7 @@ class DataLoader(data.Dataset):
         self.box_loader = HybridLoader(self.opt.input_box_dir, '.npy')
         self.sg_loader = HybridLoader(self.opt.input_sg_dir, '.npy')
         self.adj_loader = HybridLoader(self.opt.input_adj, '.npz')
-        self.geometry_loader = HybridLoader(self.opt.geometry_dir, '.npy')
+        self.geometry_loader = HybridLoader(self.opt.geometry_dir, '.npz')
 
         # self.label_start_ix.shape[0]
         self.num_images = len(self.info['images'])
@@ -199,7 +204,7 @@ class DataLoader(data.Dataset):
         adj2_batch = []
         adj3_batch = []
         geometry = []
-        rela = []
+        rela_label = []
         obj_label = []
 
         wrapped = False
@@ -209,7 +214,7 @@ class DataLoader(data.Dataset):
 
         for i in range(batch_size):
             # fetch image
-            tmp_fc, tmp_att, tmp_seq, tmp_adj, tmp_geometry, tmp_rela, tmp_obj_label, \
+            tmp_fc, tmp_att, tmp_seq, tmp_adj, tmp_geometry, tmp_rela_label, tmp_obj_label, \
                 ix, tmp_wrapped = self._prefetch_process[split].get()
             if tmp_wrapped:
                 wrapped = True
@@ -220,7 +225,7 @@ class DataLoader(data.Dataset):
             adj2_batch.append(tmp_adj['adj2'])  # adj2
             adj3_batch.append(tmp_adj['adj3'])  # adj3
             geometry.append(tmp_geometry)
-            rela.append(tmp_rela)
+            rela_label.append(tmp_rela_label)
             obj_label.append(tmp_obj_label)
 
             tmp_label = np.zeros(
@@ -247,9 +252,8 @@ class DataLoader(data.Dataset):
         # #sort by att_feat length
         # fc_batch, att_batch, label_batch, gts, infos = \
         #     zip(*sorted(zip(fc_batch, att_batch, np.vsplit(label_batch, batch_size), gts, infos), key=lambda x: len(x[1]), reverse=True))
-        fc_batch, att_batch, label_batch, gts, infos, adj1, adj2, adj3, geometry, rela, obj_label = \
-            zip(*sorted(zip(fc_batch, att_batch, label_batch,
-                            gts, infos, adj1_batch, adj2_batch, adj3_batch, geometry, rela, obj_label), key=lambda x: 0, reverse=True))
+        fc_batch, att_batch, label_batch, gts, infos, adj1, adj2, adj3, geometry, rela_label, obj_label = zip(*sorted(zip(fc_batch, att_batch, label_batch,
+                                                                                                                          gts, infos, adj1_batch, adj2_batch, adj3_batch, geometry, rela_label, obj_label), key=lambda x: 0, reverse=True))
         data = {}
         data['fc_feats'] = np.stack(
             sum([[_]*seq_per_img for _ in fc_batch], []))
@@ -284,16 +288,39 @@ class DataLoader(data.Dataset):
                           'it_max': len(self.split_ix[split]), 'wrapped': wrapped}
         data['infos'] = infos
 
-        max_rela_len = max([_.shape[0] for _ in rela])
+        max_rela_len = max([_.shape[0] for _ in rela_label])
         data['rela'] = np.zeros(
+            [len(att_batch)*seq_per_img, max_att_len, max_rela_len], dtype='int')
+        for i in range(len(att_batch)):
+
+            tmp_rela_adj = np.zeros([max_att_len, max_rela_len], dtype='int')
+            for j, item in enumerate(adj1[i]):
+                tmp_rela_adj[item[0], j] = 1
+            # 有些图没有节点关系
+            # if adj1[i].size == 0:
+            #     tmp_rela_adj = np.zeros(
+            #         [max_att_len, max_rela_len], dtype='int')
+            tmp_rela_adj = tmp_rela_adj[np.newaxis, :]
+            tmp_rela_adj = np.repeat(tmp_rela_adj, seq_per_img, axis=0)
+            data['rela'][i*seq_per_img:(i+1)*seq_per_img, :] = tmp_rela_adj
+
+        data['rela_label'] = np.zeros(
             [len(att_batch)*seq_per_img, max_rela_len], dtype='int')
         for i in range(len(att_batch)):
-            data['rela'][i*seq_per_img:(i+1)*seq_per_img,
-                         :rela[i].shape[0]] = rela[i]
-        data['rela_masks'] = np.zeros(data['rela'].shape[:2], dtype='float32')
+            data['rela_label'][i *
+                               seq_per_img:(i+1)*seq_per_img, :rela_label[i].shape[0]] = rela_label[i]
+            if rela_label[i].size == 0:
+                data['rela_label'][i *
+                                   seq_per_img:(i+1)*seq_per_img, 0] = 0
+
+        data['rela_masks'] = np.zeros(
+            data['rela_label'].shape[:2], dtype='float32')
         for i in range(len(att_batch)):
             data['rela_masks'][i *
-                               seq_per_img:(i+1)*seq_per_img, :rela[i].shape[0]] = 1
+                               seq_per_img:(i+1)*seq_per_img, :adj1[i].shape[0]] = 1
+            if adj1[i].size == 0:
+                data['rela_masks'][i *
+                                   seq_per_img:(i+1)*seq_per_img, 0] = 1
 
         data['obj_label'] = np.zeros(
             [len(att_batch)*seq_per_img, max_att_len], dtype='int')
@@ -302,7 +329,7 @@ class DataLoader(data.Dataset):
                               seq_per_img:(i+1)*seq_per_img, :obj_label[i].shape[0]] = obj_label[i]
 
         data['geometry'] = np.zeros(
-            [len(att_batch)*seq_per_img, max_att_len, 4], dtype='float32')
+            [len(att_batch)*seq_per_img, max_rela_len, 8], dtype='float32')
         for i in range(len(att_batch)):
             data['geometry'][i *
                              seq_per_img:(i+1)*seq_per_img, :adj1[i].shape[0]] = geometry[i]
@@ -353,6 +380,7 @@ class DataLoader(data.Dataset):
         """This function returns a tuple that is further passed to collate_fn
         """
         ix = index  # self.split_ix[index]
+
         if self.use_att:
             att_feat = self.att_loader.get(str(self.info['images'][ix]['id']))
             # Reshape to K x C
@@ -389,11 +417,13 @@ class DataLoader(data.Dataset):
 
         sg_data = self.sg_loader.get(str(self.info['images'][ix]['id']))
         adj = self.adj_loader.get(str(self.info['images'][ix]['id']))
-        geometry = np.random.rand(adj['adj1'].shape[0], 4)
-        rela = sg_data['rela_matrix'][:, 2].astype(np.int)-408+1
+        geometry = self.geometry_loader.get(str(self.info['images'][ix]['id']))
+        rela_label = sg_data['rela_matrix'][:, 2].astype(np.int)-408+1
         obj_label = sg_data['obj_attr'][:, 1].astype(np.int)+1
+        if obj_label.shape[0] != att_feat.shape[0]:
+            print(str(self.info['images'][ix]['id']))
         return (fc_feat,
-                att_feat, seq, adj, geometry, rela, obj_label,
+                att_feat, seq, adj, geometry, rela_label, obj_label,
                 ix)
 
     def __len__(self):
@@ -467,6 +497,10 @@ class BlobFetcher():
 
         ix, wrapped = self._get_next_minibatch_inds()
         tmp = self.split_loader.next()
+        # while self.dataloader.info['images'][ix]['id'] in exclude:
+        #     ix, wrapped = self._get_next_minibatch_inds()
+        #     tmp = self.split_loader.next()
+
         if wrapped:
             self.reset()
 

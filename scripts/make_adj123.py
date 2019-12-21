@@ -8,73 +8,76 @@ names = os.listdir(dirr)
 # sg_data =
 #         objs_label = sg_data['obj_attr'][:, 1]
 #         rela_matrix = sg_data['rela_matrix']
-for name in tqdm(names):
+for name in names:
     path = os.path.join(dirr, name)
     data = np.load(path, encoding='latin1').item()
     index = data['rela_matrix'].astype(np.int)[:, 0:2]
     num_obj = data['obj_attr'].shape[0]
 
-    # 一阶邻居
-    Adj_dis1 = np.zeros((num_obj, num_obj))
-    Adj_dis1[index[:, 0], index[:, 1]] = 1
-    assert np.sum(Adj_dis1) == index.shape[0]
-    # print('一阶邻居')
-    # print(index)
-    # print('**********************')
+    if data['rela_matrix'].size == 0:
+        print(name)
 
-    graph = dict()
-    for item in index:
-        if item[0] not in graph:
-            graph[item[0]] = list()
-            graph[item[0]].append(item[1])
-        else:
-            graph[item[0]].append(item[1])
-    adj2 = list()
-    for k, v in graph.items():
-        for one in v:
-            if one in graph.keys():
-                for i in graph[one]:
-                    adj2.append([k, i])
-    # print('二阶邻居')
-    # print(len(adj2))
-    # print(adj2)
-    adj2 = np.array(adj2)
-    Adj_dis2 = np.zeros((num_obj, num_obj))
-    if adj2.shape[0] != 0:
-        Adj_dis2[adj2[:, 0], adj2[:, 1]] = 1
-    # print('sumAdj_dis2--{}'.format(np.sum(Adj_dis2)))
-    # print(Adj_dis2)
-    # print('**********************')
+    # # 一阶邻居
+    # Adj_dis1 = np.zeros((num_obj, num_obj))
+    # Adj_dis1[index[:, 0], index[:, 1]] = 1
+    # assert np.sum(Adj_dis1) == index.shape[0]
+    # # print('一阶邻居')
+    # # print(index)
+    # # print('**********************')
 
-    graph2 = dict()
-    for item in adj2:
-        if item[0] not in graph2:
-            graph2[item[0]] = list()
-            graph2[item[0]].append(item[1])
-        else:
-            graph2[item[0]].append(item[1])
+    # graph = dict()
+    # for item in index:
+    #     if item[0] not in graph:
+    #         graph[item[0]] = list()
+    #         graph[item[0]].append(item[1])
+    #     else:
+    #         graph[item[0]].append(item[1])
+    # adj2 = list()
+    # for k, v in graph.items():
+    #     for one in v:
+    #         if one in graph.keys():
+    #             for i in graph[one]:
+    #                 adj2.append([k, i])
+    # # print('二阶邻居')
+    # # print(len(adj2))
+    # # print(adj2)
+    # adj2 = np.array(adj2)
+    # Adj_dis2 = np.zeros((num_obj, num_obj))
+    # if adj2.shape[0] != 0:
+    #     Adj_dis2[adj2[:, 0], adj2[:, 1]] = 1
+    # # print('sumAdj_dis2--{}'.format(np.sum(Adj_dis2)))
+    # # print(Adj_dis2)
+    # # print('**********************')
 
-    adj3 = list()
-    for k, v in graph2.items():
-        for one in v:
-            if one in graph.keys():
-                for i in graph[one]:
-                    adj3.append([k, i])
-    # print('三阶邻居')
-    # print(len(adj3))
-    # print(adj3)
-    adj3 = np.array(adj3)
-    Adj_dis3 = np.zeros((num_obj, num_obj))
-    if adj3.shape[0] != 0:
-        Adj_dis3[adj3[:, 0], adj3[:, 1]] = 1
-    # print('sumAdj_dis3--{}'.format(np.sum(Adj_dis3)))
-    # print(Adj_dis3)
-    # print(np.nonzero(Adj_dis3))
+    # graph2 = dict()
+    # for item in adj2:
+    #     if item[0] not in graph2:
+    #         graph2[item[0]] = list()
+    #         graph2[item[0]].append(item[1])
+    #     else:
+    #         graph2[item[0]].append(item[1])
 
-    save_name = os.path.join(
-        '/home/lkk/code/self-critical.pytorch/data/coco_img_sg_adj', name.split('.')[0])
-    np.savez(save_name,
-             adj1=index, adj2=adj2, adj3=adj3)
+    # adj3 = list()
+    # for k, v in graph2.items():
+    #     for one in v:
+    #         if one in graph.keys():
+    #             for i in graph[one]:
+    #                 adj3.append([k, i])
+    # # print('三阶邻居')
+    # # print(len(adj3))
+    # # print(adj3)
+    # adj3 = np.array(adj3)
+    # Adj_dis3 = np.zeros((num_obj, num_obj))
+    # if adj3.shape[0] != 0:
+    #     Adj_dis3[adj3[:, 0], adj3[:, 1]] = 1
+    # # print('sumAdj_dis3--{}'.format(np.sum(Adj_dis3)))
+    # # print(Adj_dis3)
+    # # print(np.nonzero(Adj_dis3))
+
+    # save_name = os.path.join(
+    #     '/home/lkk/code/self-critical.pytorch/data/coco_img_sg_adj', name.split('.')[0])
+    # np.savez(save_name,
+    #          adj1=index, adj2=adj2, adj3=adj3)
 
     # # 二阶邻居
     # Adj_dis2 = np.zeros((num_obj, num_obj))

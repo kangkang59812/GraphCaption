@@ -14,21 +14,21 @@ class LossWrapper(torch.nn.Module):
             self.crit = utils.LanguageModelCriterion()
         self.rl_crit = utils.RewardCriterion()
 
-    def forward(self, fc_feats, att_feats, obj_label, rela, geometry,
+    def forward(self, fc_feats, att_feats, obj_label, rela_label, rela, geometry,
                 adj1, adj2, adj3, labels, masks, att_masks, rela_masks,
                 gts, gt_indices, sc_flag):
         out = {}
         if not sc_flag:
-            loss = self.crit(self.model(fc_feats, att_feats, obj_label, rela, geometry,
+            loss = self.crit(self.model(fc_feats, att_feats, obj_label, rela_label, rela, geometry,
                                         adj1, adj2, adj3, rela_masks, labels, att_masks), labels[:, 1:], masks[:, 1:])
         else:
             self.model.eval()
             with torch.no_grad():
-                greedy_res, _ = self.model(fc_feats, att_feats, obj_label, rela, geometry,
+                greedy_res, _ = self.model(fc_feats, att_feats, obj_label, rela_label, rela, geometry,
                                            adj1, adj2, adj3, rela_masks, labels, att_masks,
                                            mode='sample')
             self.model.train()
-            gen_result, sample_logprobs = self.model(fc_feats, att_feats, obj_label, rela, geometry,
+            gen_result, sample_logprobs = self.model(fc_feats, att_feats, obj_label, rela_label, rela, geometry,
                                                      adj1, adj2, adj3, rela_masks, labels, att_masks,
                                                      opt={'sample_method': 'sample'}, mode='sample')
             gts = [gts[_] for _ in gt_indices.tolist()]

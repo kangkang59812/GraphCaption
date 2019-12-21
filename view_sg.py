@@ -2,16 +2,18 @@ import numpy as np
 import json
 
 data = 'trainval'  # trainval or test
-image_id = '391895'  # 14, 16
+image_id = '109'  # 14, 16
 
 if data == 'trainval':
     sg_path = '/home/lkk/code/self-critical.pytorch/data/coco_img_sg/'+image_id+'.npy'
     feat_path = '/home/lkk/code/self-critical.pytorch/data/cocobu_att/'+image_id+'.npz'
     voc = np.load(
         '/home/lkk/code/self-critical.pytorch/data/coco_pred_sg_rela.npy').item()['rela_dict']
-
+    box_path = '/home/lkk/code/self-critical.pytorch/data/cocobu_box/'+image_id+'.npy'
+    
     sg = np.load(sg_path, encoding='latin1').item()
     feat = np.load(feat_path)
+    box = np.load(box_path)
 
     print('sg object numbers:{}'.format(sg['obj_attr'].shape[0]))
     print('object numbers:{}'.format(feat['feat'].shape[0]))

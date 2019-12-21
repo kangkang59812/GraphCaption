@@ -11,7 +11,7 @@ from misc.rewards import init_scorer, get_self_critical_reward
 from misc.loss_wrapper import LossWrapper
 import models
 from dataloader3 import *
-
+import traceback
 try:
     import tensorboardX as tb
 except ImportError:
@@ -74,18 +74,18 @@ def train(opt):
     opt.vocab = loader.get_vocab()
 
     # DataParallel
-    # model = models.setup(opt).cuda()
-    # del opt.vocab
-    # dp_model = torch.nn.DataParallel(model)
-    # lw_model = LossWrapper(model, opt)
-    # dp_lw_model = torch.nn.DataParallel(lw_model)
+    model = models.setup(opt).cuda()
+    del opt.vocab
+    dp_model = torch.nn.DataParallel(model)
+    lw_model = LossWrapper(model, opt)
+    dp_lw_model = torch.nn.DataParallel(lw_model)
 
     # not DataParallel
-    dp_model = models.setup(opt).cuda()
-    model = dp_model
-    del opt.vocab
-    dp_lw_model = LossWrapper(dp_model, opt)
-    lw_model = dp_lw_model
+    # dp_model = models.setup(opt).cuda()
+    # model = dp_model
+    # del opt.vocab
+    # dp_lw_model = LossWrapper(dp_model, opt)
+    # lw_model = dp_lw_model
 
     epoch_done = True
     # Assure in training mode
@@ -164,18 +164,18 @@ def train(opt):
             torch.cuda.synchronize()
             start = time.time()
 
-            tmp = [data['fc_feats'], data['att_feats'], data['obj_label'], data['rela'], data['geometry'],
+            tmp = [data['fc_feats'], data['att_feats'], data['obj_label'], data['rela_label'], data['rela'], data['geometry'],
                    data['adj1'], data['adj2'], data['adj3'], data['labels'], data['masks'], data['att_masks'],
                    data['rela_masks']]
             tmp = [_ if _ is None else _.cuda() for _ in tmp]
-            fc_feats, att_feats, obj_label, rela, geometry,\
+            fc_feats, att_feats, obj_label, rela_label, rela, geometry,\
                 adj1, adj2, adj3, labels, masks, att_masks, rela_masks = tmp
 
             optimizer.zero_grad()
             # fc_feats: 均值特征[256*5,2048]
             # att_feats: 区域特征[1280,61,2048], 需要mask
             # obj_label: 区域的标签[1280,61], 需要mask
-            # rela: 区域关系的标签[1280,57], 需要mask
+            # rela: 区域关系的邻接矩阵, 需要mask
             # geometry : 几何关系特征[1280,61,4], 需要mask
             # adj1, adj2, adj3：邻接矩阵 [1280,61,61]
             # labels: caption的标签[1280,18]，开头有0填充
@@ -184,7 +184,7 @@ def train(opt):
             # rela_masks: 区域关系标签的mask[1280,57]
             # data['gts']: [256,5,16]原始的GT列表
             # torch.arange(0, len(data['gts'])) 0-255
-            model_out = dp_lw_model(fc_feats, att_feats, obj_label, rela, geometry,
+            model_out = dp_lw_model(fc_feats, att_feats, obj_label, rela_label, rela, geometry,
                                     adj1, adj2, adj3, labels, masks, att_masks, rela_masks,
                                     data['gts'], torch.arange(0, len(data['gts'])), sc_flag)
 

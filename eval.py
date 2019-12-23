@@ -9,9 +9,9 @@ import time
 import os
 from six.moves import cPickle
 
-import opts
+import opts3 as opts
 import models
-from dataloader import *
+from dataloader3 import *
 from dataloaderraw import *
 import eval_utils
 import argparse
@@ -21,18 +21,18 @@ import torch
 # Input arguments and options
 parser = argparse.ArgumentParser()
 # Input paths
-parser.add_argument('--model', type=str, default='',
+parser.add_argument('--model', type=str, default='/home/lkk/code/self-critical.pytorch/save/model-best.pth',
                     help='path to model to evaluate')
 parser.add_argument('--cnn_model', type=str,  default='resnet101',
                     help='resnet101, resnet152')
-parser.add_argument('--infos_path', type=str, default='',
+parser.add_argument('--infos_path', type=str, default='/home/lkk/code/self-critical.pytorch/save/infos_fc-best.pkl',
                     help='path to infos to evaluate')
 opts.add_eval_options(parser)
 
 opt = parser.parse_args()
 
 # Load infos
-with open(opt.infos_path) as f:
+with open(opt.infos_path, 'rb') as f:
     infos = utils.pickle_load(f)
 
 # override and collect parameters

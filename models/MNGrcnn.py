@@ -8,7 +8,6 @@ import torch.nn.functional as F
 from torch.autograd import *
 from torch.nn.utils.rnn import PackedSequence, pack_padded_sequence, pad_packed_sequence
 import misc.utils as utils
-
 from .CaptionModel import CaptionModel
 
 bad_endings = ['a', 'an', 'the', 'in', 'for', 'at', 'of', 'with',
@@ -224,7 +223,7 @@ class AttModel(CaptionModel):
 
         return fc_feats, att_feats, obj2vec, rela2vec, geometry_feats, att_masks, rela_masks
 
-    def _forward(self, fc_feats, att_feats, obj_label, rela_label, rela_adj, geometry,
+    def _forward(self, fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, geometry,
                  adj1, adj2, adj3, rela_masks, seq, att_masks):
 
         batch_size = fc_feats.size(0)
@@ -239,10 +238,10 @@ class AttModel(CaptionModel):
         # pp_att_feats is used for attention, we cache it in advance to reduce computation cost
         if self.use_gcn:
             gcn_obj2vec, gcn_rela2vec = self.s_gcnn(
-                p_obj2vec, p_rela2vec, adj1, adj2, adj3, rela_adj)
+                p_obj2vec, p_rela2vec, adj1, adj2, adj3, rela_sub, rela_obj)
 
             gcn_att_feats, gcn_geometry = self.v_gcnn(
-                p_att_feats, p_geometry, adj1, adj2, adj3, rela_adj)
+                p_att_feats, p_geometry, adj1, adj2, adj3, rela_sub, rela_obj)
         else:
             gcn_obj2vec, gcn_rela2vec = p_obj2vec, p_rela2vec
             gcn_att_feats, gcn_geometry = p_att_feats, p_geometry
@@ -488,28 +487,39 @@ class GRCNN(nn.Module):
         self.node_dim = node_dim
         self.rela_dim = rela_dim
         self.feat_update_step = 3
+        self.node_transform = nn.ModuleList()
+        self.rela_transform = nn.ModuleList()
 
-        # to do
-        # num_classes_obj = 151
-        # num_classes_pred = 51
+        for i in range(self.feat_update_step):
+            self.node_transform.append(
+                nn.Linear(self.node_dim, self.node_dim),
+                nn.Dropout(0.5)
+            )
 
-        # self.avgpool = nn.AdaptiveAvgPool2d(1)
-        # # self.pred_feature_extractor = make_roi_relation_feature_extractor(cfg, in_channels)
-
-        # self.obj_embedding = nn.Sequential(
-        #     nn.Linear(2048, self.dim),
-        #     nn.ReLU(True),
-        #     nn.Linear(self.dim, self.dim),
-        # )
-        # # 输入2048，输出1024
-        # self.rel_embedding = nn.Sequential(
-        #     nn.Linear(num_classes_pred, self.dim),
-        #     nn.ReLU(True),
-        #     nn.Linear(self.dim, self.dim),
-        # )
+            self.rela_transform.append(
+                nn.Linear(self.rela_dim, self.rela_dim),
+                nn.Dropout(0.5)
+            )
 
     def forward(self, node, rela, *adj):
-        pass
+        adj1, adj2, adj3, rela_sub, rela_obj = adj[0], adj[1], adj[2], adj[3], obj[4]
+
+        # step1
+        num1 = torch.sum(adj1, 2, keepdim=True)  # 每个节点的一阶邻居个数
+        mask1 = torch.gt(num1, 0)
+        neighbors1_feat = torch.tensor([1.])/(num1+1e-8)*mask1.float()*self.node_transform[0](torch.bmm(adj1, node))
+
+        num2 = torch.sum(adj2, 2, keepdim=True)  # 每个节点的二阶邻居个数
+        mask2 = torch.gt(num2, 0)
+        neighbors2_feat = torch.tensor([1.])/(num2+1e-8)*mask2.float()*self.node_transform[1](torch.bmm(adj2, node))
+
+        num3 = torch.sum(adj3, 2, keepdim=True)  # 每个节点的三阶邻居个数
+        mask3 = torch.gt(num3, 0)
+        neighbors3_feat = torch.tensor([1.])/(num3+1e-8)*mask3.float()*self.node_transform[2](torch.bmm(adj3, node))
+
+        node_step1 = F.relu(node+neighbors1_feat+neighbors2_feat+neighbors3_feat)
+
+
 
 
 class MNGrcnnCore(nn.Module):

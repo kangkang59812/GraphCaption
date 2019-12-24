@@ -164,11 +164,11 @@ def train(opt):
             torch.cuda.synchronize()
             start = time.time()
 
-            tmp = [data['fc_feats'], data['att_feats'], data['obj_label'], data['rela_label'], data['rela'], data['geometry'],
+            tmp = [data['fc_feats'], data['att_feats'], data['obj_label'], data['rela_label'], data['rela_sub'], data['rela_obj'], data['geometry'],
                    data['adj1'], data['adj2'], data['adj3'], data['labels'], data['masks'], data['att_masks'],
                    data['rela_masks']]
             tmp = [_ if _ is None else _.cuda() for _ in tmp]
-            fc_feats, att_feats, obj_label, rela_label, rela, geometry,\
+            fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, geometry,\
                 adj1, adj2, adj3, labels, masks, att_masks, rela_masks = tmp
 
             optimizer.zero_grad()
@@ -184,7 +184,7 @@ def train(opt):
             # rela_masks: 区域关系标签的mask[1280,57]
             # data['gts']: [256,5,16]原始的GT列表
             # torch.arange(0, len(data['gts'])) 0-255
-            model_out = dp_lw_model(fc_feats, att_feats, obj_label, rela_label, rela, geometry,
+            model_out = dp_lw_model(fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, geometry,
                                     adj1, adj2, adj3, labels, masks, att_masks, rela_masks,
                                     data['gts'], torch.arange(0, len(data['gts'])), sc_flag)
 

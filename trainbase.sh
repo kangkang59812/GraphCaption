@@ -1,6 +1,6 @@
 #!/bin/sh
 
-python train3.py --id fc_rl \
+python train3.py --id gcn \
 --use_gcn False \
 --start_from save_rl \
 --checkpoint_path save_rl 

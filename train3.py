@@ -74,18 +74,18 @@ def train(opt):
     opt.vocab = loader.get_vocab()
 
     # DataParallel
-    model = models.setup(opt).cuda()
-    del opt.vocab
-    dp_model = torch.nn.DataParallel(model)
-    lw_model = LossWrapper(model, opt)
-    dp_lw_model = torch.nn.DataParallel(lw_model)
+    # model = models.setup(opt).cuda()
+    # del opt.vocab
+    # dp_model = torch.nn.DataParallel(model)
+    # lw_model = LossWrapper(model, opt)
+    # dp_lw_model = torch.nn.DataParallel(lw_model)
 
     # not DataParallel
-    # dp_model = models.setup(opt).cuda()
-    # model = dp_model
-    # del opt.vocab
-    # dp_lw_model = LossWrapper(dp_model, opt)
-    # lw_model = dp_lw_model
+    dp_model = models.setup(opt).cuda()
+    model = dp_model
+    del opt.vocab
+    dp_lw_model = LossWrapper(dp_model, opt)
+    lw_model = dp_lw_model
 
     epoch_done = True
     # Assure in training mode
@@ -164,11 +164,11 @@ def train(opt):
             torch.cuda.synchronize()
             start = time.time()
 
-            tmp = [data['fc_feats'], data['att_feats'], data['obj_label'], data['rela_label'], data['rela_sub'], data['rela_obj'], data['geometry'],
+            tmp = [data['fc_feats'], data['att_feats'], data['obj_label'], data['rela_label'], data['rela_sub'], data['rela_obj'],  data['rela_n2r'], data['geometry'],
                    data['adj1'], data['adj2'], data['adj3'], data['labels'], data['masks'], data['att_masks'],
                    data['rela_masks']]
             tmp = [_ if _ is None else _.cuda() for _ in tmp]
-            fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, geometry,\
+            fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, rela_n2r, geometry,\
                 adj1, adj2, adj3, labels, masks, att_masks, rela_masks = tmp
 
             optimizer.zero_grad()
@@ -184,7 +184,7 @@ def train(opt):
             # rela_masks: 区域关系标签的mask[1280,57]
             # data['gts']: [256,5,16]原始的GT列表
             # torch.arange(0, len(data['gts'])) 0-255
-            model_out = dp_lw_model(fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, geometry,
+            model_out = dp_lw_model(fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, rela_n2r, geometry,
                                     adj1, adj2, adj3, labels, masks, att_masks, rela_masks,
                                     data['gts'], torch.arange(0, len(data['gts'])), sc_flag)
 
@@ -240,7 +240,8 @@ def train(opt):
             if (iteration % opt.save_checkpoint_every == 0):
                 # eval model
                 eval_kwargs = {'split': 'val',
-                               'dataset': opt.input_json}
+                               'dataset': opt.input_json,
+                               'beam_size': 3}
                 eval_kwargs.update(vars(opt))
                 val_loss, predictions, lang_stats = eval_utils.eval_split(
                     model, lw_model.crit, loader, eval_kwargs)

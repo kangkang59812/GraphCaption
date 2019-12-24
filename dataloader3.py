@@ -30,17 +30,18 @@ class HybridLoader:
         self.db_path = db_path
         self.ext = ext
         if self.ext == '.npy':
-            self.loader = lambda x: np.load(x)
+            self.loader = lambda x: np.load(x, allow_pickle=True)
         else:
-            self.loader = lambda x: np.load(x)['feat']
+            self.loader = lambda x: np.load(x, allow_pickle=True)['feat']
         if 'sg' in db_path:
-            self.loader = lambda x: np.load(x, encoding='latin1').item()
+            self.loader = lambda x: np.load(
+                x, encoding='latin1', allow_pickle=True).item()
         if 'adj' in db_path:
             # 必须是对象，不可以是file
-            self.loader = lambda x: (np.load(x)['adj1'], np.load(x)[
+            self.loader = lambda x: (np.load(x, allow_pickle=True)['adj1'], np.load(x)[
                                      'adj2'], np.load(x)['adj3'])
         if 'geometry' in db_path:
-            self.loader = lambda x: np.load(x)['feats']
+            self.loader = lambda x: np.load(x, allow_pickle=True)['feats']
 
         if db_path.endswith('.lmdb'):
             self.db_type = 'lmdb'
@@ -110,7 +111,8 @@ class DataLoader(data.Dataset):
             self.vocab_size = len(self.ix_to_word)
             print('vocab size is ', self.vocab_size)
 
-        self.sg_voc = np.load(self.opt.input_sg_voc).item()['rela_dict']
+        self.sg_voc = np.load(self.opt.input_sg_voc,
+                              allow_pickle=True).item()['rela_dict']
 
         # open the hdf5 file
         if self.opt.input_label_h5 != 'none':
@@ -232,7 +234,6 @@ class DataLoader(data.Dataset):
             rela_label.append(tmp_rela_label)
             obj_label.append(tmp_obj_label)
             sub_obj.append(tmp_sub_obj)
-
             tmp_label = np.zeros(
                 [seq_per_img, self.seq_length + 2], dtype='int')
             if hasattr(self, 'h5_label_file'):
@@ -257,8 +258,9 @@ class DataLoader(data.Dataset):
         # #sort by att_feat length
         # fc_batch, att_batch, label_batch, gts, infos = \
         #     zip(*sorted(zip(fc_batch, att_batch, np.vsplit(label_batch, batch_size), gts, infos), key=lambda x: len(x[1]), reverse=True))
-        fc_batch, att_batch, label_batch, gts, infos, adj1, adj2, adj3, geometry, rela_label, obj_label, sub_obj = zip(*sorted(zip(fc_batch, att_batch, label_batch,
-                                                                                                                                   gts, infos, adj1_batch, adj2_batch, adj3_batch, geometry, rela_label, obj_label, sub_obj), key=lambda x: 0, reverse=True))
+        fc_batch, att_batch, label_batch, gts, infos, adj1, adj2, adj3, geometry, \
+            rela_label, obj_label, sub_obj = zip(*sorted(zip(fc_batch, att_batch, label_batch,
+                                                             gts, infos, adj1_batch, adj2_batch, adj3_batch, geometry, rela_label, obj_label, sub_obj), key=lambda x: 0, reverse=True))
         data = {}
         data['fc_feats'] = np.stack(
             sum([[_]*seq_per_img for _ in fc_batch], []))
@@ -294,13 +296,14 @@ class DataLoader(data.Dataset):
         data['infos'] = infos
 
         max_rela_len = max([_.shape[0] for _ in rela_label])
+        # 计算边特征，用到的节点特征的邻接矩阵
         data['rela_sub'] = np.zeros(
-            [len(att_batch)*seq_per_img, max_rela_len, max_att_len], dtype='int')
+            [len(att_batch)*seq_per_img, max_rela_len, max_att_len], dtype='float32')
         data['rela_obj'] = np.zeros(
-            [len(att_batch)*seq_per_img, max_rela_len, max_att_len], dtype='int')
+            [len(att_batch)*seq_per_img, max_rela_len, max_att_len], dtype='float32')
         for i in range(len(att_batch)):
-            tmp_rela_sub = np.zeros([max_rela_len, max_att_len], dtype='int')
-            tmp_rela_obj = np.zeros([max_rela_len, max_att_len], dtype='int')
+            tmp_rela_sub = np.zeros([max_rela_len, max_att_len], dtype='float32')
+            tmp_rela_obj = np.zeros([max_rela_len, max_att_len], dtype='float32')
 
             for j, item in enumerate(sub_obj[i]):
                 tmp_rela_sub[j, item[0]] = 1
@@ -335,6 +338,22 @@ class DataLoader(data.Dataset):
             if adj1[i].size == 0:
                 data['rela_masks'][i *
                                    seq_per_img:(i+1)*seq_per_img, 0] = 1
+
+        # 计算节点特征，用到的边的特征的邻接矩阵
+        data['rela_n2r'] = np.zeros(
+            [len(att_batch)*seq_per_img, max_att_len, max_rela_len], dtype='float32')
+        for i in range(len(att_batch)):
+
+            tmp_rela_adj = np.zeros([max_att_len, max_rela_len], dtype='float32')
+            for j, item in enumerate(adj1[i]):
+                tmp_rela_adj[item[0], j] = 1.
+            # 有些图没有节点关系
+            # if adj1[i].size == 0:
+            #     tmp_rela_adj = np.zeros(
+            #         [max_att_len, max_rela_len], dtype='int')
+            tmp_rela_adj = tmp_rela_adj[np.newaxis, :]
+            tmp_rela_adj = np.repeat(tmp_rela_adj, seq_per_img, axis=0)
+            data['rela_n2r'][i*seq_per_img:(i+1)*seq_per_img, :] = tmp_rela_adj
 
         data['obj_label'] = np.zeros(
             [len(att_batch)*seq_per_img, max_att_len], dtype='int')

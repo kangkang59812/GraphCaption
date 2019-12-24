@@ -154,9 +154,9 @@ class AttModel(CaptionModel):
                                                 nn.ReLU(),
                                                 nn.Dropout(self.drop_prob_lm))
 
-        # self.s_gcnn = GRCNN(self.rnn_size, self.rnn_size, 3)
+        self.s_gcnn = GRCNN(self.rnn_size, self.rnn_size, 3)
 
-        # self.v_gcnn = GRCNN(self.att_feat_size, self.rnn_size, 3)
+        self.v_gcnn = GRCNN(self.rnn_size, self.rnn_size, 3)
 
         # 最终输出层，只用1层全连接
         self.logit_layers = getattr(opt, 'logit_layers', 1)
@@ -210,20 +210,20 @@ class AttModel(CaptionModel):
         att_feats = pack_wrapper(self.att_embed, att_feats, att_masks)
 
         obj2vec = pack_wrapper(self.obj_embedding, obj_label, att_masks)
-        #obj2vec = self.obj_embedding(obj_label)
+        # obj2vec = self.obj_embedding(obj_label)
 
         rela2vec = pack_wrapper(self.rela_embedding, rela_label, rela_masks)
-        #rela2vec = self.rela_embedding(rela_label)
+        # rela2vec = self.rela_embedding(rela_label)
 
         geometry_feats = pack_wrapper(
             self.geometry_embedding, geometry, rela_masks)
-        #geometry_feats = self.geometry_embedding(geometry)
+        # geometry_feats = self.geometry_embedding(geometry)
         # Project the attention feats first to reduce memory and computation comsumptions.
         # p_att_feats = self.ctx2att(att_feats)
 
         return fc_feats, att_feats, obj2vec, rela2vec, geometry_feats, att_masks, rela_masks
 
-    def _forward(self, fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, geometry,
+    def _forward(self, fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, rela_n2r, geometry,
                  adj1, adj2, adj3, rela_masks, seq, att_masks):
 
         batch_size = fc_feats.size(0)
@@ -238,10 +238,10 @@ class AttModel(CaptionModel):
         # pp_att_feats is used for attention, we cache it in advance to reduce computation cost
         if self.use_gcn:
             gcn_obj2vec, gcn_rela2vec = self.s_gcnn(
-                p_obj2vec, p_rela2vec, adj1, adj2, adj3, rela_sub, rela_obj)
+                p_obj2vec, p_rela2vec, p_att_masks, p_rela_masks, adj1, adj2, adj3, rela_sub, rela_obj, rela_n2r)
 
             gcn_att_feats, gcn_geometry = self.v_gcnn(
-                p_att_feats, p_geometry, adj1, adj2, adj3, rela_sub, rela_obj)
+                p_att_feats, p_geometry, p_att_masks, p_rela_masks, adj1, adj2, adj3, rela_sub, rela_obj, rela_n2r)
         else:
             gcn_obj2vec, gcn_rela2vec = p_obj2vec, p_rela2vec
             gcn_att_feats, gcn_geometry = p_att_feats, p_geometry
@@ -293,7 +293,7 @@ class AttModel(CaptionModel):
 
         return logprobs, state
 
-    def _sample_beam(self, fc_feats, att_feats, obj_label, rela_label, rela_adj, geometry,
+    def _sample_beam(self, fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, rela_n2r, geometry,
                      adj1, adj2, adj3, rela_masks, seq, att_masks, opt={}):
         beam_size = opt.get('beam_size', 10)
         batch_size = fc_feats.size(0)
@@ -303,10 +303,10 @@ class AttModel(CaptionModel):
 
         if self.use_gcn:
             gcn_obj2vec, gcn_rela2vec = self.s_gcnn(
-                p_obj2vec, p_rela2vec, adj1, adj2, adj3, rela_adj)
+                p_obj2vec, p_rela2vec, p_att_masks, p_rela_masks, adj1, adj2, adj3, rela_sub, rela_obj, rela_n2r)
 
             gcn_att_feats, gcn_geometry = self.v_gcnn(
-                p_att_feats, p_geometry, adj1, adj2, adj3, rela_adj)
+                p_att_feats, p_geometry, p_att_masks, p_rela_masks, adj1, adj2, adj3, rela_sub, rela_obj, rela_n2r)
         else:
             gcn_obj2vec, gcn_rela2vec = p_obj2vec, p_rela2vec
             gcn_att_feats, gcn_geometry = p_att_feats, p_geometry
@@ -364,7 +364,7 @@ class AttModel(CaptionModel):
         # return the samples and their log likelihoods
         return seq.transpose(0, 1), seqLogprobs.transpose(0, 1)
 
-    def _sample(self, fc_feats, att_feats, obj_label, rela_label, rela_adj, geometry,
+    def _sample(self, fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, rela_n2r, geometry,
                 adj1, adj2, adj3, rela_masks, seq, att_masks, opt={}):
 
         sample_method = opt.get('sample_method', 'greedy')
@@ -374,7 +374,7 @@ class AttModel(CaptionModel):
         block_trigrams = opt.get('block_trigrams', 0)
         remove_bad_endings = opt.get('remove_bad_endings', 0)
         if beam_size > 1:
-            return self._sample_beam(fc_feats, att_feats, obj_label, rela_label, rela_adj, geometry,
+            return self._sample_beam(fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, rela_n2r, geometry,
                                      adj1, adj2, adj3, rela_masks, seq, att_masks, opt)
 
         batch_size = fc_feats.size(0)
@@ -385,10 +385,10 @@ class AttModel(CaptionModel):
 
         if self.use_gcn:
             gcn_obj2vec, gcn_rela2vec = self.s_gcnn(
-                p_obj2vec, p_rela2vec, adj1, adj2, adj3, rela_adj)
+                p_obj2vec, p_rela2vec, p_att_masks, p_rela_masks, adj1, adj2, adj3, rela_sub, rela_obj, rela_n2r)
 
             gcn_att_feats, gcn_geometry = self.v_gcnn(
-                p_att_feats, p_geometry, adj1, adj2, adj3, rela_adj)
+                p_att_feats, p_geometry, p_att_masks, p_rela_masks, adj1, adj2, adj3, rela_sub, rela_obj, rela_n2r)
         else:
             gcn_obj2vec, gcn_rela2vec = p_obj2vec, p_rela2vec
             gcn_att_feats, gcn_geometry = p_att_feats, p_geometry
@@ -487,39 +487,108 @@ class GRCNN(nn.Module):
         self.node_dim = node_dim
         self.rela_dim = rela_dim
         self.feat_update_step = 3
-        self.node_transform = nn.ModuleList()
+        self.node2node_transform = nn.ModuleList()
+        self.node2rela_transform = nn.ModuleList()
         self.rela_transform = nn.ModuleList()
 
+        # 1-3阶邻居
         for i in range(self.feat_update_step):
-            self.node_transform.append(
+            self.node2node_transform.append(nn.Sequential(
                 nn.Linear(self.node_dim, self.node_dim),
-                nn.Dropout(0.5)
+                nn.Dropout(0.5))
             )
+        # node-rela
+        self.node2rela_transform.append(nn.Sequential(
+            nn.Linear(self.rela_dim, self.node_dim),
+            nn.Dropout(0.5))
+        )
+        # rela-sub
+        self.rela_transform.append(nn.Sequential(
+            nn.Linear(self.rela_dim, self.rela_dim),
+            nn.Dropout(0.5)))
+        # rela-obj
+        self.rela_transform.append(nn.Sequential(
+            nn.Linear(self.rela_dim, self.rela_dim),
+            nn.Dropout(0.5)))
 
-            self.rela_transform.append(
-                nn.Linear(self.rela_dim, self.rela_dim),
-                nn.Dropout(0.5)
-            )
-
-    def forward(self, node, rela, *adj):
-        adj1, adj2, adj3, rela_sub, rela_obj = adj[0], adj[1], adj[2], adj[3], obj[4]
+    def forward(self, node, rela, p_att_masks, p_rela_masks, *adj):
+        adj1, adj2, adj3, rela_sub, rela_obj, rela_n2r = adj[
+            0], adj[1], adj[2], adj[3], adj[4], adj[5]
 
         # step1
-        num1 = torch.sum(adj1, 2, keepdim=True)  # 每个节点的一阶邻居个数
-        mask1 = torch.gt(num1, 0)
-        neighbors1_feat = torch.tensor([1.])/(num1+1e-8)*mask1.float()*self.node_transform[0](torch.bmm(adj1, node))
+        # num1 = torch.sum(adj1, 2, keepdim=True).cuda()  # 每个节点的一阶邻居个数
+        # mask1 = torch.gt(num1, 0).float().cuda()
+        # neighbors1_feat = torch.tensor(
+        #     [1.]).cuda()/(num1+1e-8)*mask1*self.node_transform[0](torch.bmm(adj1, node))
+        neighbors1_feat = pack_wrapper(
+            self.node2node_transform[0], torch.bmm(adj1, node), p_att_masks)
 
-        num2 = torch.sum(adj2, 2, keepdim=True)  # 每个节点的二阶邻居个数
-        mask2 = torch.gt(num2, 0)
-        neighbors2_feat = torch.tensor([1.])/(num2+1e-8)*mask2.float()*self.node_transform[1](torch.bmm(adj2, node))
+        # num2 = torch.sum(adj2, 2, keepdim=True).cuda()  # 每个节点的二阶邻居个数
+        # mask2 = torch.gt(num2, 0).float().cuda()
+        # neighbors2_feat = torch.tensor(
+        #     [1.]).cuda()/(num2+1e-8)*mask2*self.node_transform[1](torch.bmm(adj2, node))
+        neighbors2_feat = pack_wrapper(
+            self.node2node_transform[1], torch.bmm(adj2, node), p_att_masks)
 
-        num3 = torch.sum(adj3, 2, keepdim=True)  # 每个节点的三阶邻居个数
-        mask3 = torch.gt(num3, 0)
-        neighbors3_feat = torch.tensor([1.])/(num3+1e-8)*mask3.float()*self.node_transform[2](torch.bmm(adj3, node))
+        # num3 = torch.sum(adj3, 2, keepdim=True).cuda()  # 每个节点的三阶邻居个数
+        # mask3 = torch.gt(num3, 0).float().cuda()
+        # neighbors3_feat = torch.tensor(
+        #     [1.]).cuda()/(num3+1e-8)*mask3*self.node_transform[2](torch.bmm(adj3, node))
+        neighbors3_feat = pack_wrapper(
+            self.node2node_transform[2], torch.bmm(adj3, node), p_att_masks)
 
-        node_step1 = F.relu(node+neighbors1_feat+neighbors2_feat+neighbors3_feat)
+        node2rela_feat = pack_wrapper(
+            self.node2rela_transform[0], torch.bmm(rela_n2r, rela), p_att_masks)
 
+        node_step1 = F.relu(node+neighbors1_feat +
+                            neighbors2_feat+neighbors3_feat + node2rela_feat)
 
+        rela_sub_feat = pack_wrapper(
+            self.rela_transform[0], torch.bmm(rela_sub, node), p_rela_masks)
+        rela_obj_feat = pack_wrapper(
+            self.rela_transform[1], torch.bmm(rela_obj, node), p_rela_masks)
+
+        rela_step1 = F.relu(rela+rela_sub_feat+rela_obj_feat)
+        # step 1 end
+
+        # step 2
+        neighbors1_feat = pack_wrapper(
+            self.node2node_transform[0], torch.bmm(adj1, node_step1), p_att_masks)
+
+        neighbors2_feat = pack_wrapper(
+            self.node2node_transform[1], torch.bmm(adj2, node_step1), p_att_masks)
+
+        node2rela_feat = pack_wrapper(
+            self.node2rela_transform[0], torch.bmm(rela_n2r, rela_step1), p_att_masks)
+
+        node_step2 = F.relu(node_step1 + neighbors1_feat +
+                            neighbors2_feat + node2rela_feat)
+
+        rela_sub_feat = pack_wrapper(
+            self.rela_transform[0], torch.bmm(rela_sub, node_step1), p_rela_masks)
+        rela_obj_feat = pack_wrapper(
+            self.rela_transform[1], torch.bmm(rela_obj, node_step1), p_rela_masks)
+
+        rela_step2 = F.relu(rela_step1+rela_sub_feat+rela_obj_feat)
+        # step 2 end
+
+        # step 3
+        neighbors1_feat = pack_wrapper(
+            self.node2node_transform[0], torch.bmm(adj1, node_step2), p_att_masks)
+
+        node2rela_feat = pack_wrapper(
+            self.node2rela_transform[0], torch.bmm(rela_n2r, rela_step2), p_att_masks)
+
+        node_step3 = F.relu(node_step2 + neighbors1_feat + node2rela_feat)
+
+        rela_sub_feat = pack_wrapper(
+            self.rela_transform[0], torch.bmm(rela_sub, node_step2), p_rela_masks)
+        rela_obj_feat = pack_wrapper(
+            self.rela_transform[1], torch.bmm(rela_obj, node_step2), p_rela_masks)
+
+        rela_step3 = F.relu(rela_step2+rela_sub_feat+rela_obj_feat)
+
+        return node_step3, rela_step3
 
 
 class MNGrcnnCore(nn.Module):

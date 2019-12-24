@@ -58,7 +58,7 @@ def parse_opt():
                         help='几何关系维度')
     parser.add_argument('--logit_layers', type=int, default=1,
                         help='number of layers in the RNN')
-    parser.add_argument('--use_gcn', type=bool, default=False,
+    parser.add_argument('--use_gcn', type=bool, default=True,
                         help='use gcn')
     parser.add_argument('--use_bn', type=int, default=0,
                         help='If 1, then do batch_normalization first in att_embed, if 2 then do bn both in the beginning and the end of att_embed')
@@ -72,7 +72,7 @@ def parse_opt():
                         help='If use box, do we normalize box feature')
 
     # Optimization: General
-    parser.add_argument('--max_epochs', type=int, default=30,
+    parser.add_argument('--max_epochs', type=int, default=50,
                         help='number of epochs')
     parser.add_argument('--batch_size', type=int, default=64,
                         help='minibatch size')
@@ -80,13 +80,13 @@ def parse_opt():
                         help='clip gradients at this value')
     parser.add_argument('--drop_prob_lm', type=float, default=0.5,
                         help='strength of dropout in the Language Model RNN')
-    parser.add_argument('--self_critical_after', type=int, default=-1,
+    parser.add_argument('--self_critical_after', type=int, default=30,
                         help='After what epoch do we start finetuning the CNN? (-1 = disable; never finetune, 0 = finetune from start)')
     parser.add_argument('--seq_per_img', type=int, default=5,
                         help='number of captions to sample for each image during training. Done for efficiency since CNN forward pass is expensive. E.g. coco has 5 sents/image')
 
     # Sample related
-    parser.add_argument('--beam_size', type=int, default=3,
+    parser.add_argument('--beam_size', type=int, default=1,
                         help='used when sample_method = greedy, indicates number of beams in beam search. Usually 2 or 3 works well. More is not better. Set this to 1 for faster runtime but a bit worse performance.')
     parser.add_argument('--max_length', type=int, default=20,
                         help='Maximum length during sampling')
@@ -100,7 +100,7 @@ def parse_opt():
     # Optimization: for the Language Model
     parser.add_argument('--optim', type=str, default='adam',
                         help='what update to use? rmsprop|sgd|sgdmom|adagrad|adam')
-    parser.add_argument('--learning_rate', type=float, default=4e-4,
+    parser.add_argument('--learning_rate', type=float, default=5e-4,
                         help='learning rate')
     parser.add_argument('--learning_rate_decay_start', type=int, default=0,
                         help='at what iteration to start decaying learning rate? (-1 = dont) (in epoch)')
@@ -186,7 +186,7 @@ def parse_opt():
 
 def add_eval_options(parser):
     # Basic options
-    parser.add_argument('--batch_size', type=int, default=0,
+    parser.add_argument('--batch_size', type=int, default=256,
                         help='if > 0 then overrule, otherwise load from checkpoint.')
     parser.add_argument('--num_images', type=int, default=-1,
                         help='how many images to use when periodically evaluating the loss? (-1 = all)')
@@ -196,7 +196,7 @@ def add_eval_options(parser):
                         help='Dump images into vis/imgs folder for vis? (1=yes,0=no)')
     parser.add_argument('--dump_json', type=int, default=1,
                         help='Dump json with predictions into vis folder? (1=yes,0=no)')
-    parser.add_argument('--dump_path', type=int, default=0,
+    parser.add_argument('--dump_path', type=int, default=1,
                         help='Write image paths along with predictions into vis json? (1=yes,0=no)')
 
     # Sampling options
@@ -223,18 +223,18 @@ def add_eval_options(parser):
     # For evaluation on a folder of images:
     parser.add_argument('--image_folder', type=str, default='',
                         help='If this is nonempty then will predict on the images in this folder path')
-    parser.add_argument('--image_root', type=str, default='',
+    parser.add_argument('--image_root', type=str, default='/home/lkk/datasets/coco2014',
                         help='In case the image paths have to be preprended with a root path to an image folder')
     # For evaluation on MSCOCO images from some split:
-    parser.add_argument('--input_fc_dir', type=str, default='',
+    parser.add_argument('--input_fc_dir', type=str, default='/home/lkk/code/self-critical.pytorch/data/cocobu_fc',
                         help='path to the h5file containing the preprocessed dataset')
-    parser.add_argument('--input_att_dir', type=str, default='',
+    parser.add_argument('--input_att_dir', type=str, default='/home/lkk/code/self-critical.pytorch/data/cocobu_att',
                         help='path to the h5file containing the preprocessed dataset')
-    parser.add_argument('--input_box_dir', type=str, default='',
+    parser.add_argument('--input_box_dir', type=str, default='/home/lkk/code/self-critical.pytorch/data/cocobu_box',
                         help='path to the h5file containing the preprocessed dataset')
-    parser.add_argument('--input_label_h5', type=str, default='',
+    parser.add_argument('--input_label_h5', type=str, default='/home/lkk/code/self-critical.pytorch/data/cocotalk_label.h5',
                         help='path to the h5file containing the preprocessed dataset')
-    parser.add_argument('--input_json', type=str, default='',
+    parser.add_argument('--input_json', type=str, default='/home/lkk/code/self-critical.pytorch/data/cocotalk.json',
                         help='path to the json file containing additional info and vocab. empty = fetch from model checkpoint.')
     parser.add_argument('--split', type=str, default='test',
                         help='if running on MSCOCO images, which split to use: val|test|train')

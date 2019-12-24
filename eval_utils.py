@@ -109,13 +109,13 @@ def eval_split(model, crit, loader, eval_kwargs={}):
 
         if data.get('labels', None) is not None and verbose_loss:
             # forward the model to get loss
-            tmp = [data['fc_feats'], data['att_feats'], data['obj_label'], data['rela_label'], data['rela'], data['geometry'],
-                   data['adj1'], data['adj2'], data['adj3'], data['labels'], data['masks'], data['att_masks'],data['rela_masks']]
+            tmp = [data['fc_feats'], data['att_feats'], data['obj_label'], data['rela_label'], data['rela_sub'], data['rela_obj'], data['rela_n2r'], data['geometry'],
+                   data['adj1'], data['adj2'], data['adj3'], data['labels'], data['masks'], data['att_masks'], data['rela_masks']]
             tmp = [_.cuda() if _ is not None else _ for _ in tmp]
-            fc_feats, att_feats, obj_label, rela_label, rela, geometry,\
+            fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, rela_n2r, geometry,\
                 adj1, adj2, adj3, labels, masks, att_masks, rela_masks = tmp
             with torch.no_grad():
-                loss = crit(model(fc_feats, att_feats, obj_label, rela_label, rela, geometry,
+                loss = crit(model(fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, rela_n2r, geometry,
                                   adj1, adj2, adj3, rela_masks, labels, att_masks), labels[:, 1:], masks[:, 1:]).item()
             loss_sum = loss_sum + loss
             loss_evals = loss_evals + 1
@@ -128,7 +128,9 @@ def eval_split(model, crit, loader, eval_kwargs={}):
                    loader.batch_size) * loader.seq_per_img],
                data['rela_label'][np.arange(
                    loader.batch_size) * loader.seq_per_img],
-               data['rela'][np.arange(loader.batch_size) * loader.seq_per_img],
+               data['rela_sub'][np.arange(loader.batch_size) * loader.seq_per_img],
+               data['rela_obj'][np.arange(loader.batch_size) * loader.seq_per_img],
+               data['rela_n2r'][np.arange(loader.batch_size) * loader.seq_per_img],
                data['geometry'][np.arange(
                    loader.batch_size) * loader.seq_per_img],
                data['adj1'][np.arange(loader.batch_size) * loader.seq_per_img],
@@ -138,16 +140,17 @@ def eval_split(model, crit, loader, eval_kwargs={}):
                    loader.batch_size) * loader.seq_per_img],
                data['masks'][np.arange(loader.batch_size)
                              * loader.seq_per_img],
-               data['att_masks'][np.arange(loader.batch_size) * loader.seq_per_img],
+               data['att_masks'][np.arange(
+                   loader.batch_size) * loader.seq_per_img],
                data['rela_masks'][np.arange(
                    loader.batch_size) * loader.seq_per_img]]
 
         tmp = [_.cuda() if _ is not None else _ for _ in tmp]
-        fc_feats, att_feats, obj_label, rela_label, rela, geometry,\
+        fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, rela_n2r, geometry,\
             adj1, adj2, adj3, labels, masks, att_masks, rela_masks = tmp
         # forward the model to also get generated samples for each image
         with torch.no_grad():
-            seq = model(fc_feats, att_feats, obj_label, rela_label, rela, geometry,
+            seq = model(fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, rela_n2r, geometry,
                         adj1, adj2, adj3, rela_masks, labels, att_masks,
                         opt=eval_kwargs, mode='sample')[0].data
 

@@ -84,18 +84,18 @@ def train(opt):
 
     opt.vocab = loader.get_vocab()
     # DataParallel
-    # model = models.setup(opt).cuda()
-    # del opt.vocab
-    # dp_model = torch.nn.DataParallel(model)
-    # lw_model = LossWrapper(model, opt)
-    # dp_lw_model = torch.nn.DataParallel(lw_model)
+    model = models.setup(opt).cuda()
+    del opt.vocab
+    dp_model = torch.nn.DataParallel(model)
+    lw_model = LossWrapper(model, opt)
+    dp_lw_model = torch.nn.DataParallel(lw_model)
 
     # not DataParallel
-    dp_model = models.setup(opt).cuda()
-    model = dp_model
-    del opt.vocab
-    dp_lw_model = LossWrapper(dp_model, opt)
-    lw_model = dp_lw_model
+    # dp_model = models.setup(opt).cuda()
+    # model = dp_model
+    # del opt.vocab
+    # dp_lw_model = LossWrapper(dp_model, opt)
+    # lw_model = dp_lw_model
     
     epoch_done = True
     # Assure in training mode

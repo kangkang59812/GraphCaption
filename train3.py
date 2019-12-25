@@ -12,6 +12,8 @@ from misc.loss_wrapper import LossWrapper
 import models
 from dataloader3 import *
 import traceback
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 try:
     import tensorboardX as tb
 except ImportError:

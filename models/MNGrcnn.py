@@ -180,10 +180,17 @@ class AttModel(CaptionModel):
 
         self.rela2att = nn.Linear(self.rnn_size, self.att_hid_size)
 
+        self.init_weight()
         # For remove bad endding
         self.vocab = opt.vocab
         self.bad_endings_ix = [
             int(k) for k, v in self.vocab.items() if v in bad_endings]
+
+    def init_weight(self):
+        initrange = 0.1
+        self.embed[0].weight.data.uniform_(-initrange, initrange)
+        self.obj_embedding[0].weight.data.uniform_(-initrange, initrange)
+        self.rela_embedding[0].weight.data.uniform_(-initrange, initrange)
 
     def init_hidden(self, bsz):
         weight = next(self.parameters())
@@ -487,29 +494,52 @@ class GRCNN(nn.Module):
         self.node_dim = node_dim
         self.rela_dim = rela_dim
         self.feat_update_step = 3
+        # step1-3的参数
         self.node2node_transform = nn.ModuleList()
         self.node2rela_transform = nn.ModuleList()
         self.rela_transform = nn.ModuleList()
 
-        # 1-3阶邻居
         for i in range(self.feat_update_step):
-            self.node2node_transform.append(nn.Sequential(
-                nn.Linear(self.node_dim, self.node_dim),
-                nn.Dropout(0.5))
-            )
-        # node-rela
-        self.node2rela_transform.append(nn.Sequential(
-            nn.Linear(self.rela_dim, self.node_dim),
-            nn.Dropout(0.5))
+            self.node2node_transform.append(
+                nn.ModuleList())
+            self.node2rela_transform.append(
+                nn.ModuleList())
+            self.rela_transform.append(
+                nn.ModuleList())
+
+        # step1-3分别要3阶，2阶，1阶邻居
+        self.node2node_transform[0].append(
+            nn.Linear(self.node_dim, self.node_dim)
         )
-        # rela-sub
-        self.rela_transform.append(nn.Sequential(
-            nn.Linear(self.rela_dim, self.rela_dim),
-            nn.Dropout(0.5)))
-        # rela-obj
-        self.rela_transform.append(nn.Sequential(
-            nn.Linear(self.rela_dim, self.rela_dim),
-            nn.Dropout(0.5)))
+        self.node2node_transform[0].append(
+            nn.Linear(self.node_dim, self.node_dim)
+        )
+        self.node2node_transform[0].append(
+            nn.Linear(self.node_dim, self.node_dim)
+        )
+        self.node2node_transform[1].append(
+            nn.Linear(self.node_dim, self.node_dim)
+        )
+        self.node2node_transform[1].append(
+            nn.Linear(self.node_dim, self.node_dim)
+        )
+        self.node2node_transform[2].append(
+            nn.Linear(self.node_dim, self.node_dim)
+        )
+        for i in range(self.feat_update_step):
+            # node-rela
+            self.node2rela_transform[i].append(
+                nn.Linear(self.rela_dim, self.node_dim)
+            )
+            # rela-sub
+            self.rela_transform[i].append(
+                nn.Linear(self.rela_dim, self.rela_dim)
+            )
+            # rela-obj
+            self.rela_transform[i].append(
+                nn.Linear(self.rela_dim, self.rela_dim)
+            )
+        # self._init_weight()
 
     def forward(self, node, rela, p_att_masks, p_rela_masks, *adj):
         adj1, adj2, adj3, rela_sub, rela_obj, rela_n2r = adj[
@@ -520,75 +550,134 @@ class GRCNN(nn.Module):
         # mask1 = torch.gt(num1, 0).float().cuda()
         # neighbors1_feat = torch.tensor(
         #     [1.]).cuda()/(num1+1e-8)*mask1*self.node_transform[0](torch.bmm(adj1, node))
-        neighbors1_feat = pack_wrapper(
-            self.node2node_transform[0], torch.bmm(adj1, node), p_att_masks)
+        I11 = torch.eye(adj1.shape[1]).unsqueeze(0).expand_as(adj1)
+        adj11_hat = adj1+I11.cuda()
+        D11 = torch.diag_embed(torch.sum(adj11_hat, dim=2))
+        # D = torch.diag()
+        neighbors11_feat = pack_wrapper(
+            self.node2node_transform[0][0], torch.bmm(torch.bmm(self.inv(D11), adj11_hat), node), p_att_masks)
 
-        # num2 = torch.sum(adj2, 2, keepdim=True).cuda()  # 每个节点的二阶邻居个数
-        # mask2 = torch.gt(num2, 0).float().cuda()
-        # neighbors2_feat = torch.tensor(
-        #     [1.]).cuda()/(num2+1e-8)*mask2*self.node_transform[1](torch.bmm(adj2, node))
-        neighbors2_feat = pack_wrapper(
-            self.node2node_transform[1], torch.bmm(adj2, node), p_att_masks)
+        I12 = torch.eye(adj2.shape[1]).unsqueeze(0).expand_as(adj2)
+        adj12_hat = adj2+I12.cuda()
+        D12 = torch.diag_embed(torch.sum(adj12_hat, dim=2))
+        neighbors12_feat = pack_wrapper(
+            self.node2node_transform[0][1], torch.bmm(
+                torch.bmm(self.inv(D12), adj12_hat), node), p_att_masks)
 
-        # num3 = torch.sum(adj3, 2, keepdim=True).cuda()  # 每个节点的三阶邻居个数
-        # mask3 = torch.gt(num3, 0).float().cuda()
-        # neighbors3_feat = torch.tensor(
-        #     [1.]).cuda()/(num3+1e-8)*mask3*self.node_transform[2](torch.bmm(adj3, node))
-        neighbors3_feat = pack_wrapper(
-            self.node2node_transform[2], torch.bmm(adj3, node), p_att_masks)
+        I13 = torch.eye(adj3.shape[1]).unsqueeze(0).expand_as(adj3)
+        adj13_hat = adj3+I13.cuda()
+        D13 = torch.diag_embed(torch.sum(adj13_hat, dim=2))
+        neighbors13_feat = pack_wrapper(
+            self.node2node_transform[0][2], torch.bmm(
+                torch.bmm(self.inv(D13), adj13_hat), node), p_att_masks)
 
-        node2rela_feat = pack_wrapper(
-            self.node2rela_transform[0], torch.bmm(rela_n2r, rela), p_att_masks)
+        node2rela_feat1 = pack_wrapper(
+            self.node2rela_transform[0][0], torch.bmm(rela_n2r, rela), p_att_masks)
 
-        node_step1 = F.relu(node+neighbors1_feat +
-                            neighbors2_feat+neighbors3_feat + node2rela_feat)
+        node_step1 = F.relu(neighbors11_feat +
+                            neighbors12_feat+neighbors13_feat + node2rela_feat1)
 
-        rela_sub_feat = pack_wrapper(
-            self.rela_transform[0], torch.bmm(rela_sub, node), p_rela_masks)
-        rela_obj_feat = pack_wrapper(
-            self.rela_transform[1], torch.bmm(rela_obj, node), p_rela_masks)
+        rela_sub_feat1 = pack_wrapper(
+            self.rela_transform[0][0], torch.bmm(rela_sub, node), p_rela_masks)
+        rela_obj_feat1 = pack_wrapper(
+            self.rela_transform[0][1], torch.bmm(rela_obj, node), p_rela_masks)
 
-        rela_step1 = F.relu(rela+rela_sub_feat+rela_obj_feat)
+        rela_step1 = F.relu(rela+rela_sub_feat1+rela_obj_feat1)
         # step 1 end
 
         # step 2
-        neighbors1_feat = pack_wrapper(
-            self.node2node_transform[0], torch.bmm(adj1, node_step1), p_att_masks)
+        I21 = torch.eye(adj1.shape[1]).unsqueeze(0).expand_as(adj1)
+        adj21_hat = adj1+I21.cuda()
+        D21 = torch.diag_embed(torch.sum(adj21_hat, dim=2))
+        # D = torch.diag()
+        neighbors21_feat = pack_wrapper(
+            self.node2node_transform[1][0], torch.bmm(torch.bmm(self.inv(D21), adj21_hat), node_step1), p_att_masks)
 
-        neighbors2_feat = pack_wrapper(
-            self.node2node_transform[1], torch.bmm(adj2, node_step1), p_att_masks)
+        I22 = torch.eye(adj2.shape[1]).unsqueeze(0).expand_as(adj2)
+        adj22_hat = adj2+I22.cuda()
+        D22 = torch.diag_embed(torch.sum(adj22_hat, dim=2))
+        neighbors22_feat = pack_wrapper(
+            self.node2node_transform[1][1], torch.bmm(
+                torch.bmm(self.inv(D22), adj22_hat), node_step1), p_att_masks)
 
-        node2rela_feat = pack_wrapper(
-            self.node2rela_transform[0], torch.bmm(rela_n2r, rela_step1), p_att_masks)
+        node2rela_feat2 = pack_wrapper(
+            self.node2rela_transform[1][0], torch.bmm(rela_n2r, rela_step1), p_att_masks)
 
-        node_step2 = F.relu(node_step1 + neighbors1_feat +
-                            neighbors2_feat + node2rela_feat)
+        node_step2 = F.relu(neighbors21_feat +
+                            neighbors22_feat + node2rela_feat2)
 
-        rela_sub_feat = pack_wrapper(
-            self.rela_transform[0], torch.bmm(rela_sub, node_step1), p_rela_masks)
-        rela_obj_feat = pack_wrapper(
-            self.rela_transform[1], torch.bmm(rela_obj, node_step1), p_rela_masks)
+        rela_sub_feat2 = pack_wrapper(
+            self.rela_transform[1][0], torch.bmm(rela_sub, node_step1), p_rela_masks)
+        rela_obj_feat2 = pack_wrapper(
+            self.rela_transform[1][1], torch.bmm(rela_obj, node_step1), p_rela_masks)
 
-        rela_step2 = F.relu(rela_step1+rela_sub_feat+rela_obj_feat)
+        rela_step2 = F.relu(rela_step1+rela_sub_feat2+rela_obj_feat2)
         # step 2 end
 
         # step 3
-        neighbors1_feat = pack_wrapper(
-            self.node2node_transform[0], torch.bmm(adj1, node_step2), p_att_masks)
+        I31 = torch.eye(adj1.shape[1]).unsqueeze(0).expand_as(adj1)
+        adj31_hat = adj1+I31.cuda()
+        D31 = torch.diag_embed(torch.sum(adj31_hat, dim=2))
+        # D = torch.diag()
+        neighbors31_feat = pack_wrapper(
+            self.node2node_transform[2][0], torch.bmm(torch.bmm(self.inv(D31), adj31_hat), node_step2), p_att_masks)
 
-        node2rela_feat = pack_wrapper(
-            self.node2rela_transform[0], torch.bmm(rela_n2r, rela_step2), p_att_masks)
+        node2rela_feat3 = pack_wrapper(
+            self.node2rela_transform[2][0], torch.bmm(rela_n2r, rela_step2), p_att_masks)
 
-        node_step3 = F.relu(node_step2 + neighbors1_feat + node2rela_feat)
+        node_step3 = F.relu(neighbors31_feat + node2rela_feat3)
 
-        rela_sub_feat = pack_wrapper(
-            self.rela_transform[0], torch.bmm(rela_sub, node_step2), p_rela_masks)
-        rela_obj_feat = pack_wrapper(
-            self.rela_transform[1], torch.bmm(rela_obj, node_step2), p_rela_masks)
+        rela_sub_feat3 = pack_wrapper(
+            self.rela_transform[2][0], torch.bmm(rela_sub, node_step2), p_rela_masks)
+        rela_obj_feat3 = pack_wrapper(
+            self.rela_transform[2][1], torch.bmm(rela_obj, node_step2), p_rela_masks)
 
-        rela_step3 = F.relu(rela_step2+rela_sub_feat+rela_obj_feat)
+        rela_step3 = F.relu(rela_step2+rela_sub_feat3+rela_obj_feat3)
 
         return node_step3, rela_step3
+
+    def _init_weight(self):
+        for n, w in self.named_parameters():
+            if n.find('weight') != -1:
+                w.data.normal_(0.0, 0.01)
+            elif n.find('bias') != -1:
+                w.data.fill_(0.0)
+
+    def inv(self, A, eps=1e-10):
+
+        assert len(A.shape) == 3 and \
+            A.shape[1] == A.shape[2]
+        n = A.shape[1]
+        U = A.clone().data
+        L = A.new_zeros(A.shape).data
+        L[:, range(n), range(n)] = 1
+        I = L.clone()
+
+        # A = LU
+        # [A I] = [LU I] -> [U L^{-1}]
+        L_inv = I
+        for i in range(n-1):
+            L[:, i+1:, i:i+1] = U[:, i+1:, i:i+1] / (U[:, i:i+1, i:i+1] + eps)
+            L_inv[:, i+1:, :] = L_inv[:, i+1:, :] - \
+                L[:, i+1:, i:i+1].matmul(L_inv[:, i:i+1, :])
+            U[:, i+1:, :] = U[:, i+1:, :] - \
+                L[:, i+1:, i:i+1].matmul(U[:, i:i+1, :])
+
+        # [U L^{-1}] -> [I U^{-1}L^{-1}] = [I (LU)^{-1}]
+        A_inv = L_inv
+        for i in range(n-1, -1, -1):
+            A_inv[:, i:i+1, :] = A_inv[:, i:i+1, :] / \
+                (U[:, i:i+1, i:i+1] + eps)
+            U[:, i:i+1, :] = U[:, i:i+1, :] / (U[:, i:i+1, i:i+1] + eps)
+
+            if i > 0:
+                A_inv[:, :i, :] = A_inv[:, :i, :] - \
+                    U[:, :i, i:i+1].matmul(A_inv[:, i:i+1, :])
+                U[:, :i, :] = U[:, :i, :] - \
+                    U[:, :i, i:i+1].matmul(U[:, i:i+1, :])
+
+        A_inv_grad = - A_inv.matmul(A).matmul(A_inv)
+        return A_inv + A_inv_grad - A_inv_grad.data
 
 
 class MNGrcnnCore(nn.Module):
@@ -601,6 +690,7 @@ class MNGrcnnCore(nn.Module):
         self.lang_lstm = nn.LSTMCell(
             opt.rnn_size * 3, opt.rnn_size)  # h^1_t, \hat v
         self.attention = Attention(opt)
+        self.init_weight()
 
     def forward(self, xt, fc_feats, node_feats, p_node_feats, rela_feats, p_rela_feats, state, att_masks=None, rela_masks=None):
         prev_h = state[0][-1]
@@ -623,6 +713,23 @@ class MNGrcnnCore(nn.Module):
         state = (torch.stack([h_att, h_lang]), torch.stack([c_att, c_lang]))
 
         return output, state
+
+    def init_weight(self):
+        nn.init.orthogonal_(self.att_lstm.weight_hh,
+                            gain=nn.init.calculate_gain('relu'))
+        nn.init.orthogonal_(self.att_lstm.weight_ih,
+                            gain=nn.init.calculate_gain('relu'))
+        nn.init.constant_(self.att_lstm.bias_hh, 0)
+        nn.init.constant_(self.att_lstm.bias_ih, 0)
+
+        nn.init.orthogonal_(self.lang_lstm.weight_hh,
+                            gain=nn.init.calculate_gain('relu'))
+        nn.init.orthogonal_(self.lang_lstm.weight_ih,
+                            gain=nn.init.calculate_gain('relu'))
+        nn.init.constant_(self.lang_lstm.bias_hh, 0)
+        nn.init.constant_(self.lang_lstm.bias_ih, 0)
+
+
 
 
 class MNGrcnn(AttModel):

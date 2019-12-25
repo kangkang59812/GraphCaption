@@ -10,3 +10,4 @@ vis/imgs/dummy
 log/*
 vis/*
 *.log
+debug*

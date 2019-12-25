@@ -76,6 +76,8 @@ def parse_opt():
                         help='number of epochs')
     parser.add_argument('--batch_size', type=int, default=64,
                         help='minibatch size')
+    parser.add_argument('--num_worker', type=int, default=0,
+                        help='num_worker of dataloader')
     parser.add_argument('--grad_clip', type=float, default=0.1,  # 5.,
                         help='clip gradients at this value')
     parser.add_argument('--drop_prob_lm', type=float, default=0.5,
@@ -144,7 +146,7 @@ def parse_opt():
                         help='how often to save a model checkpoint (in iterations)?')
     parser.add_argument('--save_history_ckpt', type=int, default=1,
                         help='If save checkpoints at every save point')
-    parser.add_argument('--checkpoint_path', type=str, default='save',
+    parser.add_argument('--checkpoint_path', type=str, default='debug',
                         help='directory to store checkpointed models')
     parser.add_argument('--language_eval', type=int, default=1,
                         help='Evaluate language as well (1 = yes, 0 = no)? BLEU/CIDEr/METEOR/ROUGE_L? requires coco-caption code from Github.')

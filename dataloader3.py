@@ -95,7 +95,7 @@ class DataLoader(data.Dataset):
         self.opt = opt
         self.batch_size = self.opt.batch_size
         self.seq_per_img = opt.seq_per_img
-
+        self.nw = opt.num_worker
         # feature related options
         self.use_fc = getattr(opt, 'use_fc', True)
         self.use_att = getattr(opt, 'use_att', True)
@@ -505,7 +505,7 @@ class BlobFetcher():
                                                      self.dataloader.split_ix[self.split][self.dataloader.iterators[self.split]:]),
                                                  shuffle=False,
                                                  pin_memory=True,
-                                                 num_workers=4,  # 4 is usually enough
+                                                 num_workers=self.dataloader.nw,  # 4 is usually enough
                                                  collate_fn=lambda x: x[0]))
 
     def _get_next_minibatch_inds(self):

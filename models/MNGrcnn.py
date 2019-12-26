@@ -53,6 +53,9 @@ class Attention(nn.Module):
         self.alpha_net1 = nn.Linear(self.att_hid_size, 1)
         self.alpha_net2 = nn.Linear(self.att_hid_size, 1)
 
+        self.node_gate = nn.Linear(self.att_hid_size, self.att_hid_size)
+        self.rela_gate = nn.Linear(self.att_hid_size, self.att_hid_size)
+
     def forward(self, h, node_feats, p_node_feats, rela_feats, p_rela_feats, att_masks=None, rela_masks=None):
         node_size = node_feats.numel() // node_feats.size(0) // node_feats.size(-1)
         node = p_node_feats.view(-1, node_size, self.att_hid_size)
@@ -550,26 +553,34 @@ class GRCNN(nn.Module):
         # mask1 = torch.gt(num1, 0).float().cuda()
         # neighbors1_feat = torch.tensor(
         #     [1.]).cuda()/(num1+1e-8)*mask1*self.node_transform[0](torch.bmm(adj1, node))
-        #I11 = torch.eye(adj1.shape[1]).unsqueeze(0).expand_as(adj1)
+        # I11 = torch.eye(adj1.shape[1]).unsqueeze(0).expand_as(adj1)
         adj11_hat = adj1  # +I11.cuda()
         D11 = torch.diag_embed(torch.sum(adj11_hat, dim=2))
         # D = torch.diag()
+        # neighbors11_feat = pack_wrapper(
+        #     self.node2node_transform[0][0], torch.bmm(torch.bmm(self.inv(D11), adj11_hat), node), p_att_masks)
         neighbors11_feat = pack_wrapper(
-            self.node2node_transform[0][0], torch.bmm(torch.bmm(self.inv(D11), adj11_hat), node), p_att_masks)
+            self.node2node_transform[0][0], torch.bmm(adj11_hat, node), p_att_masks)
 
-        #I12 = torch.eye(adj2.shape[1]).unsqueeze(0).expand_as(adj2)
+        # I12 = torch.eye(adj2.shape[1]).unsqueeze(0).expand_as(adj2)
         adj12_hat = adj2  # +I12.cuda()
         D12 = torch.diag_embed(torch.sum(adj12_hat, dim=2))
+        # neighbors12_feat = pack_wrapper(
+        #     self.node2node_transform[0][1], torch.bmm(
+        #         torch.bmm(self.inv(D12), adj12_hat), node), p_att_masks)
         neighbors12_feat = pack_wrapper(
-            self.node2node_transform[0][1], torch.bmm(
-                torch.bmm(self.inv(D12), adj12_hat), node), p_att_masks)
+            self.node2node_transform[0][1],
+            torch.bmm(adj12_hat, node), p_att_masks)
 
-        #I13 = torch.eye(adj3.shape[1]).unsqueeze(0).expand_as(adj3)
+        # I13 = torch.eye(adj3.shape[1]).unsqueeze(0).expand_as(adj3)
         adj13_hat = adj3  # +I13.cuda()
         D13 = torch.diag_embed(torch.sum(adj13_hat, dim=2))
+        # neighbors13_feat = pack_wrapper(
+        #     self.node2node_transform[0][2], torch.bmm(
+        #         torch.bmm(self.inv(D13), adj13_hat), node), p_att_masks)
         neighbors13_feat = pack_wrapper(
-            self.node2node_transform[0][2], torch.bmm(
-                torch.bmm(self.inv(D13), adj13_hat), node), p_att_masks)
+            self.node2node_transform[0][2],
+            torch.bmm(adj13_hat, node), p_att_masks)
 
         node2rela_feat1 = pack_wrapper(
             self.node2rela_transform[0][0], torch.bmm(rela_n2r, rela), p_att_masks)
@@ -586,14 +597,14 @@ class GRCNN(nn.Module):
         # step 1 end
 
         # step 2
-        #I21 = torch.eye(adj1.shape[1]).unsqueeze(0).expand_as(adj1)
+        # I21 = torch.eye(adj1.shape[1]).unsqueeze(0).expand_as(adj1)
         adj21_hat = adj1  # +I21.cuda()
         D21 = torch.diag_embed(torch.sum(adj21_hat, dim=2))
         # D = torch.diag()
         neighbors21_feat = pack_wrapper(
             self.node2node_transform[1][0], torch.bmm(torch.bmm(self.inv(D21), adj21_hat), node_step1), p_att_masks)
 
-        #I22 = torch.eye(adj2.shape[1]).unsqueeze(0).expand_as(adj2)
+        # I22 = torch.eye(adj2.shape[1]).unsqueeze(0).expand_as(adj2)
         adj22_hat = adj2  # +I22.cuda()
         D22 = torch.diag_embed(torch.sum(adj22_hat, dim=2))
         neighbors22_feat = pack_wrapper(
@@ -615,7 +626,7 @@ class GRCNN(nn.Module):
         # step 2 end
 
         # step 3
-        #I31 = torch.eye(adj1.shape[1]).unsqueeze(0).expand_as(adj1)
+        # I31 = torch.eye(adj1.shape[1]).unsqueeze(0).expand_as(adj1)
         adj31_hat = adj1  # +I31.cuda()
         D31 = torch.diag_embed(torch.sum(adj31_hat, dim=2))
         # D = torch.diag()

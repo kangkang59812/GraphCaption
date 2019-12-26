@@ -550,22 +550,22 @@ class GRCNN(nn.Module):
         # mask1 = torch.gt(num1, 0).float().cuda()
         # neighbors1_feat = torch.tensor(
         #     [1.]).cuda()/(num1+1e-8)*mask1*self.node_transform[0](torch.bmm(adj1, node))
-        I11 = torch.eye(adj1.shape[1]).unsqueeze(0).expand_as(adj1)
-        adj11_hat = adj1+I11.cuda()
+        #I11 = torch.eye(adj1.shape[1]).unsqueeze(0).expand_as(adj1)
+        adj11_hat = adj1  # +I11.cuda()
         D11 = torch.diag_embed(torch.sum(adj11_hat, dim=2))
         # D = torch.diag()
         neighbors11_feat = pack_wrapper(
             self.node2node_transform[0][0], torch.bmm(torch.bmm(self.inv(D11), adj11_hat), node), p_att_masks)
 
-        I12 = torch.eye(adj2.shape[1]).unsqueeze(0).expand_as(adj2)
-        adj12_hat = adj2+I12.cuda()
+        #I12 = torch.eye(adj2.shape[1]).unsqueeze(0).expand_as(adj2)
+        adj12_hat = adj2  # +I12.cuda()
         D12 = torch.diag_embed(torch.sum(adj12_hat, dim=2))
         neighbors12_feat = pack_wrapper(
             self.node2node_transform[0][1], torch.bmm(
                 torch.bmm(self.inv(D12), adj12_hat), node), p_att_masks)
 
-        I13 = torch.eye(adj3.shape[1]).unsqueeze(0).expand_as(adj3)
-        adj13_hat = adj3+I13.cuda()
+        #I13 = torch.eye(adj3.shape[1]).unsqueeze(0).expand_as(adj3)
+        adj13_hat = adj3  # +I13.cuda()
         D13 = torch.diag_embed(torch.sum(adj13_hat, dim=2))
         neighbors13_feat = pack_wrapper(
             self.node2node_transform[0][2], torch.bmm(
@@ -574,7 +574,7 @@ class GRCNN(nn.Module):
         node2rela_feat1 = pack_wrapper(
             self.node2rela_transform[0][0], torch.bmm(rela_n2r, rela), p_att_masks)
 
-        node_step1 = F.relu(neighbors11_feat +
+        node_step1 = F.relu(node + neighbors11_feat +
                             neighbors12_feat+neighbors13_feat + node2rela_feat1)
 
         rela_sub_feat1 = pack_wrapper(
@@ -586,15 +586,15 @@ class GRCNN(nn.Module):
         # step 1 end
 
         # step 2
-        I21 = torch.eye(adj1.shape[1]).unsqueeze(0).expand_as(adj1)
-        adj21_hat = adj1+I21.cuda()
+        #I21 = torch.eye(adj1.shape[1]).unsqueeze(0).expand_as(adj1)
+        adj21_hat = adj1  # +I21.cuda()
         D21 = torch.diag_embed(torch.sum(adj21_hat, dim=2))
         # D = torch.diag()
         neighbors21_feat = pack_wrapper(
             self.node2node_transform[1][0], torch.bmm(torch.bmm(self.inv(D21), adj21_hat), node_step1), p_att_masks)
 
-        I22 = torch.eye(adj2.shape[1]).unsqueeze(0).expand_as(adj2)
-        adj22_hat = adj2+I22.cuda()
+        #I22 = torch.eye(adj2.shape[1]).unsqueeze(0).expand_as(adj2)
+        adj22_hat = adj2  # +I22.cuda()
         D22 = torch.diag_embed(torch.sum(adj22_hat, dim=2))
         neighbors22_feat = pack_wrapper(
             self.node2node_transform[1][1], torch.bmm(
@@ -603,7 +603,7 @@ class GRCNN(nn.Module):
         node2rela_feat2 = pack_wrapper(
             self.node2rela_transform[1][0], torch.bmm(rela_n2r, rela_step1), p_att_masks)
 
-        node_step2 = F.relu(neighbors21_feat +
+        node_step2 = F.relu(node_step2 + neighbors21_feat +
                             neighbors22_feat + node2rela_feat2)
 
         rela_sub_feat2 = pack_wrapper(
@@ -615,8 +615,8 @@ class GRCNN(nn.Module):
         # step 2 end
 
         # step 3
-        I31 = torch.eye(adj1.shape[1]).unsqueeze(0).expand_as(adj1)
-        adj31_hat = adj1+I31.cuda()
+        #I31 = torch.eye(adj1.shape[1]).unsqueeze(0).expand_as(adj1)
+        adj31_hat = adj1  # +I31.cuda()
         D31 = torch.diag_embed(torch.sum(adj31_hat, dim=2))
         # D = torch.diag()
         neighbors31_feat = pack_wrapper(
@@ -625,7 +625,7 @@ class GRCNN(nn.Module):
         node2rela_feat3 = pack_wrapper(
             self.node2rela_transform[2][0], torch.bmm(rela_n2r, rela_step2), p_att_masks)
 
-        node_step3 = F.relu(neighbors31_feat + node2rela_feat3)
+        node_step3 = F.relu(node_step2 + neighbors31_feat + node2rela_feat3)
 
         rela_sub_feat3 = pack_wrapper(
             self.rela_transform[2][0], torch.bmm(rela_sub, node_step2), p_rela_masks)
@@ -728,8 +728,6 @@ class MNGrcnnCore(nn.Module):
                             gain=nn.init.calculate_gain('relu'))
         nn.init.constant_(self.lang_lstm.bias_hh, 0)
         nn.init.constant_(self.lang_lstm.bias_ih, 0)
-
-
 
 
 class MNGrcnn(AttModel):

@@ -603,7 +603,7 @@ class GRCNN(nn.Module):
         node2rela_feat2 = pack_wrapper(
             self.node2rela_transform[1][0], torch.bmm(rela_n2r, rela_step1), p_att_masks)
 
-        node_step2 = F.relu(node_step2 + neighbors21_feat +
+        node_step2 = F.relu(node_step1 + neighbors21_feat +
                             neighbors22_feat + node2rela_feat2)
 
         rela_sub_feat2 = pack_wrapper(

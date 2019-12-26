@@ -53,10 +53,11 @@ class Attention(nn.Module):
         self.alpha_net1 = nn.Linear(self.att_hid_size, 1)
         self.alpha_net2 = nn.Linear(self.att_hid_size, 1)
 
-        self.node_gate = nn.Sequential(nn.Dropout(0.5), nn.Linear(
-            2*self.att_hid_size, 2*self.att_hid_size), nn.GLU())
-        self.rela_gate = nn.Sequential(nn.Dropout(0.5), nn.Linear(
-            2*self.att_hid_size, 2*self.att_hid_size), nn.GLU())
+        self.node_gate = nn.Sequential(nn.Linear(
+           self.att_hid_size, self.att_hid_size), nn.Sigmoid())
+        self.rela_gate = nn.Sequential(nn.Linear(
+            self.att_hid_size, self.att_hid_size), nn.Sigmoid())
+        self._init_weight()
 
     def forward(self, h, node_feats, p_node_feats, rela_feats, p_rela_feats, att_masks=None, rela_masks=None):
         node_size = node_feats.numel() // node_feats.size(0) // node_feats.size(-1)
@@ -111,9 +112,16 @@ class Attention(nn.Module):
         node_res_ = torch.bmm(node_weight.unsqueeze(1), node_feats_).squeeze(1)
         rela_res_ = torch.bmm(rela_weight.unsqueeze(1), rela_feats_).squeeze(1)
 
-        node_res = self.node_gate(torch.cat([node_res, rela_res], -1))
-        rela_res = self.rela_gate(torch.cat([rela_res, node_res], -1))
+        node_res = node_res_*self.node_gate(rela_res_)
+        rela_res = rela_res_*self.rela_gate(node_res_)
         return node_res, rela_res
+
+    def _init_weight(self):
+        for n, w in self.named_parameters():
+            if n.find('weight') != -1:
+                w.data.normal_(0.0, 0.01)
+            elif n.find('bias') != -1:
+                w.data.fill_(0.0)
 
 
 class AttModel(CaptionModel):
@@ -176,17 +184,17 @@ class AttModel(CaptionModel):
                 *(reduce(lambda x, y: x+y, self.logit) + [nn.Linear(self.rnn_size, self.vocab_size + 1)]))
 
         # 计算attention用的
-        # self.node2merge = nn.Sequential(nn.Linear(self.rnn_size*2, self.rnn_size),
-        #                                 nn.ReLU(),
-        #                                 nn.Dropout(self.drop_prob_lm))
+        self.node2merge = nn.Sequential(nn.Linear(self.rnn_size*2, self.rnn_size),
+                                        nn.ReLU(),
+                                        nn.Dropout(self.drop_prob_lm))
 
-        self.node2att = nn.Linear(2*self.rnn_size, self.att_hid_size)
+        self.node2att = nn.Linear(self.rnn_size, self.att_hid_size)
 
-        # self.rela2merge = nn.Sequential(nn.Linear(self.rnn_size*2, self.rnn_size),
-        #                                 nn.ReLU(),
-        #                                 nn.Dropout(self.drop_prob_lm))
+        self.rela2merge = nn.Sequential(nn.Linear(self.rnn_size*2, self.rnn_size),
+                                        nn.ReLU(),
+                                        nn.Dropout(self.drop_prob_lm))
 
-        self.rela2att = nn.Linear(2*self.rnn_size, self.att_hid_size)
+        self.rela2att = nn.Linear(self.rnn_size, self.att_hid_size)
 
         self.init_weight()
         # For remove bad endding
@@ -261,11 +269,11 @@ class AttModel(CaptionModel):
             gcn_obj2vec, gcn_rela2vec = p_obj2vec, p_rela2vec
             gcn_att_feats, gcn_geometry = p_att_feats, p_geometry
 
-        node_feats = torch.cat((gcn_att_feats, gcn_obj2vec), 2)
-        rela_feats = torch.cat((gcn_geometry, gcn_rela2vec), 2)
+        node_feats2 = torch.cat((gcn_att_feats, gcn_obj2vec), 2)
+        rela_feats2 = torch.cat((gcn_geometry, gcn_rela2vec), 2)
 
-        # node_feats = pack_wrapper(self.node2merge, node_feats2, p_att_masks)
-        # rela_feats = pack_wrapper(self.rela2merge, rela_feats2, p_rela_masks)
+        node_feats = pack_wrapper(self.node2merge, node_feats2, p_att_masks)
+        rela_feats = pack_wrapper(self.rela2merge, rela_feats2, p_rela_masks)
 
         p_node_feats = pack_wrapper(self.node2att, node_feats, p_att_masks)
         p_rela_feats = pack_wrapper(self.rela2att, rela_feats, p_rela_masks)
@@ -326,11 +334,11 @@ class AttModel(CaptionModel):
             gcn_obj2vec, gcn_rela2vec = p_obj2vec, p_rela2vec
             gcn_att_feats, gcn_geometry = p_att_feats, p_geometry
 
-        node_feats = torch.cat((gcn_att_feats, gcn_obj2vec), 2)
-        rela_feats = torch.cat((gcn_geometry, gcn_rela2vec), 2)
+        node_feats2 = torch.cat((gcn_att_feats, gcn_obj2vec), 2)
+        rela_feats2 = torch.cat((gcn_geometry, gcn_rela2vec), 2)
 
-        # node_feats = pack_wrapper(self.node2merge, node_feats2, p_att_masks)
-        # rela_feats = pack_wrapper(self.rela2merge, rela_feats2, p_rela_masks)
+        node_feats = pack_wrapper(self.node2merge, node_feats2, p_att_masks)
+        rela_feats = pack_wrapper(self.rela2merge, rela_feats2, p_rela_masks)
 
         p_node_feats = pack_wrapper(self.node2att, node_feats, p_att_masks)
         p_rela_feats = pack_wrapper(self.rela2att, rela_feats, p_rela_masks)
@@ -408,11 +416,11 @@ class AttModel(CaptionModel):
             gcn_obj2vec, gcn_rela2vec = p_obj2vec, p_rela2vec
             gcn_att_feats, gcn_geometry = p_att_feats, p_geometry
 
-        node_feats = torch.cat((gcn_att_feats, gcn_obj2vec), 2)
-        rela_feats = torch.cat((gcn_geometry, gcn_rela2vec), 2)
+        node_feats2 = torch.cat((gcn_att_feats, gcn_obj2vec), 2)
+        rela_feats2 = torch.cat((gcn_geometry, gcn_rela2vec), 2)
 
-        # node_feats = pack_wrapper(self.node2merge, node_feats2, p_att_masks)
-        # rela_feats = pack_wrapper(self.rela2merge, rela_feats2, p_rela_masks)
+        node_feats = pack_wrapper(self.node2merge, node_feats2, p_att_masks)
+        rela_feats = pack_wrapper(self.rela2merge, rela_feats2, p_rela_masks)
 
         p_node_feats = pack_wrapper(self.node2att, node_feats, p_att_masks)
         p_rela_feats = pack_wrapper(self.rela2att, rela_feats, p_rela_masks)
@@ -704,7 +712,7 @@ class MNGrcnnCore(nn.Module):
         self.att_lstm = nn.LSTMCell(
             opt.input_encoding_size + opt.rnn_size * 2, opt.rnn_size)  # we, fc, h^2_t-1
         self.lang_lstm = nn.LSTMCell(
-            opt.rnn_size * 5, opt.rnn_size)  # h^1_t, \hat v 1024, \hat rela 1024
+            opt.rnn_size * 3, opt.rnn_size)  # h^1_t, \hat v 1024, \hat rela 1024
         self.attention = Attention(opt)
         # self.init_weight()
 

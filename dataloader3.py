@@ -302,33 +302,35 @@ class DataLoader(data.Dataset):
         data['rela_obj'] = np.zeros(
             [len(att_batch)*seq_per_img, max_rela_len, max_att_len], dtype='float32')
         for i in range(len(att_batch)):
-            tmp_rela_sub = np.zeros([max_rela_len, max_att_len], dtype='float32')
-            tmp_rela_obj = np.zeros([max_rela_len, max_att_len], dtype='float32')
+            tmp_rela_sub = np.zeros(
+                [max_rela_len, max_att_len], dtype='float32')
+            tmp_rela_obj = np.zeros(
+                [max_rela_len, max_att_len], dtype='float32')
+            if adj1[i].size != 0:
+                for j, item in enumerate(sub_obj[i]):
+                    tmp_rela_sub[j, item[0]] = 1
+                    tmp_rela_obj[j, item[1]] = 1
 
-            for j, item in enumerate(sub_obj[i]):
-                tmp_rela_sub[j, item[0]] = 1
-                tmp_rela_obj[j, item[1]] = 1
-            # 有些图没有节点关系
-            # if adj1[i].size == 0:
-            #     tmp_rela_adj = np.zeros(
-            #         [max_att_len, max_rela_len], dtype='int')
-            tmp_rela_sub = tmp_rela_sub[np.newaxis, :]
-            tmp_rela_obj = tmp_rela_obj[np.newaxis, :]
+                tmp_rela_sub = tmp_rela_sub[np.newaxis, :]
+                tmp_rela_obj = tmp_rela_obj[np.newaxis, :]
 
-            tmp_rela_sub = np.repeat(tmp_rela_sub, seq_per_img, axis=0)
-            tmp_rela_obj = np.repeat(tmp_rela_obj, seq_per_img, axis=0)
+                tmp_rela_sub = np.repeat(tmp_rela_sub, seq_per_img, axis=0)
+                tmp_rela_obj = np.repeat(tmp_rela_obj, seq_per_img, axis=0)
 
-            data['rela_sub'][i*seq_per_img:(i+1)*seq_per_img, :] = tmp_rela_sub
-            data['rela_obj'][i*seq_per_img:(i+1)*seq_per_img, :] = tmp_rela_obj
+                data['rela_sub'][i *
+                                 seq_per_img:(i+1)*seq_per_img, :] = tmp_rela_sub
+                data['rela_obj'][i *
+                                 seq_per_img:(i+1)*seq_per_img, :] = tmp_rela_obj
 
         data['rela_label'] = np.zeros(
             [len(att_batch)*seq_per_img, max_rela_len], dtype='int')
         for i in range(len(att_batch)):
-            data['rela_label'][i *
-                               seq_per_img:(i+1)*seq_per_img, :rela_label[i].shape[0]] = rela_label[i]
-            if rela_label[i].size == 0:
+            if rela_label[i].size != 0:
                 data['rela_label'][i *
-                                   seq_per_img:(i+1)*seq_per_img, 0] = 0
+                                   seq_per_img:(i+1)*seq_per_img, :rela_label[i].shape[0]] = rela_label[i]
+            # if rela_label[i].size == 0:
+            #     data['rela_label'][i *
+            #                        seq_per_img:(i+1)*seq_per_img, 0] = 0
 
         data['rela_masks'] = np.zeros(
             data['rela_label'].shape[:2], dtype='float32')
@@ -344,7 +346,8 @@ class DataLoader(data.Dataset):
             [len(att_batch)*seq_per_img, max_att_len, max_rela_len], dtype='float32')
         for i in range(len(att_batch)):
 
-            tmp_rela_adj = np.zeros([max_att_len, max_rela_len], dtype='float32')
+            tmp_rela_adj = np.zeros(
+                [max_att_len, max_rela_len], dtype='float32')
             for j, item in enumerate(adj1[i]):
                 tmp_rela_adj[item[0], j] = 1.
             # 有些图没有节点关系
@@ -382,19 +385,19 @@ class DataLoader(data.Dataset):
             adj_dis3 = np.zeros(
                 (max_att_len, max_att_len))
 
-            if adj1_batch[i].shape[0] != 0:
+            if adj1_batch[i].size != 0:
                 adj_dis1[adj1_batch[i][:, 0], adj1_batch[i][:, 1]] = 1
             adj_dis1 = adj_dis1[np.newaxis, :]
             adj_dis1 = np.repeat(adj_dis1, seq_per_img, axis=0)
             data['adj1'][i * seq_per_img:(i+1)*seq_per_img, :] = adj_dis1
 
-            if adj2_batch[i].shape[0] != 0:
+            if adj2_batch[i].size != 0:
                 adj_dis2[adj2_batch[i][:, 0], adj2_batch[i][:, 1]] = 1
             adj_dis2 = adj_dis2[np.newaxis, :]
             adj_dis2 = np.repeat(adj_dis2, seq_per_img, axis=0)
             data['adj2'][i * seq_per_img:(i+1)*seq_per_img, :] = adj_dis2
 
-            if adj3_batch[i].shape[0] != 0:
+            if adj3_batch[i].size != 0:
                 adj_dis3[adj3_batch[i][:, 0], adj3_batch[i][:, 1]] = 1
             adj_dis3 = adj_dis3[np.newaxis, :]
             adj_dis3 = np.repeat(adj_dis3, seq_per_img, axis=0)

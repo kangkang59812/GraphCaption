@@ -69,7 +69,9 @@ class HybridLoader:
             self.loader = lambda x: (np.load(x, allow_pickle=True)['adj1'], np.load(x)[
                                      'adj2'], np.load(x)['adj3'])
         if 'geometry' in db_path:
-            self.loader = lambda x: np.load(x, allow_pickle=True)['feats']
+            self.loader = lambda x: (np.load(x, allow_pickle=True)['feats'],
+                                     np.load(x, allow_pickle=True)['image_h'],
+                                     np.load(x, allow_pickle=True)['image_w'])
 
         if db_path.endswith('.lmdb'):
             self.db_type = 'lmdb'
@@ -159,13 +161,10 @@ class DataLoader(data.Dataset):
 
         self.fc_loader = HybridLoader(self.opt.input_fc_dir, '.npy')
         self.att_loader = HybridLoader(self.opt.input_att_dir, '.npz')
-        # self.box_loader = HybridLoader(self.opt.input_box_dir, '.npy')
+        self.box_loader = HybridLoader(self.opt.input_box_dir, '.npy')
         self.sg_loader = HybridLoader(self.opt.input_sg_dir, '.npy')
         self.adj_loader = HybridLoader(self.opt.input_adj, '.npz')
         self.geometry_loader = HybridLoader(self.opt.geometry_dir, '.npz')
-        if self.use_box:
-            self.sg_box_info = pickle.load(
-                open(opt.sg_box_info_path, 'rb'), encoding='latin1')
 
         # self.label_start_ix.shape[0]
         self.num_images = len(self.info['images'])
@@ -449,6 +448,8 @@ class DataLoader(data.Dataset):
         """
         ix = index  # self.split_ix[index]
         image_id = str(self.info['images'][ix]['id'])
+        g = self.geometry_loader.get(str(self.info['images'][ix]['id']))
+        h, w = g[1], g[2]
         if self.use_att:
             att_feat = self.att_loader.get(str(self.info['images'][ix]['id']))
             # Reshape to K x C
@@ -457,11 +458,18 @@ class DataLoader(data.Dataset):
                 att_feat = att_feat / \
                     np.linalg.norm(att_feat, 2, 1, keepdims=True)
             if self.use_box:
-                box_feat = self.get_box_feat(image_id)
+                box_feat = self.box_loader.get(
+                    str(self.info['images'][ix]['id']))
+                # devided by image width and height
+                x1, y1, x2, y2 = np.hsplit(box_feat, 4)
+                # question? x2-x1+1??
+                iw, ih = x2 - x1 + 1, y2 - y1 + 1
+                box_feat = np.hstack(
+                    (0.5 * (x1 + x2) / w, 0.5 * (y1 + y2) / h, iw / w, ih / h, iw * ih / (w * h)))
+                if self.norm_box_feat:
+                    box_feat = box_feat / np.linalg.norm(box_feat, 2, 1, keepdims=True)
+
                 att_feat = np.hstack([att_feat, box_feat])
-                # sort the features by the size of boxes
-                # att_feat = np.stack(
-                #     sorted(att_feat, key=lambda x: x[-1], reverse=True))
         else:
             att_feat = np.zeros((1, 1, 1), dtype='float32')
         if self.use_fc:
@@ -476,7 +484,7 @@ class DataLoader(data.Dataset):
 
         adj = self.adj_loader.get(str(self.info['images'][ix]['id']))
 
-        geometry = self.geometry_loader.get(str(self.info['images'][ix]['id']))
+        geometry = g[0]
 
         rela_label = sg_data['rela_matrix'][:, 2].astype(np.int)-408+1
         obj_label = sg_data['obj_attr'][:, 1].astype(np.int)+1
@@ -484,20 +492,6 @@ class DataLoader(data.Dataset):
         return (fc_feat,
                 att_feat, seq, adj, geometry, rela_label, obj_label, sub_obj,
                 ix)
-
-    def get_box_feat(self, image_id):
-        image = self.sg_box_info[int(image_id)]
-        if int(image_id) != 425742:
-            x1, y1, x2, y2 = np.hsplit(image['boxes'], 4)
-        else:
-            x1, y1, x2, y2 = np.hsplit(yichang, 4)
-        h, w = image['image_h'], image['image_w']
-        iw, ih = x2 - x1 + 1, y2 - y1 + 1
-        box_feat = np.hstack(
-            (0.5 * (x1 + x2) / w, 0.5 * (y1 + y2) / h, iw / w, ih / h, iw * ih / (w * h)))
-        if self.norm_box_feat:
-            box_feat = box_feat / np.linalg.norm(box_feat, 2, 1, keepdims=True)
-        return box_feat
 
     def __len__(self):
         return len(self.info['images'])

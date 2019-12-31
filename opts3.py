@@ -22,8 +22,6 @@ def parse_opt():
                         help='scene graph adj')
     parser.add_argument('--geometry_dir', type=str, default='/home/lkk/code/self-critical.pytorch/data/cocobu_geometry2',
                         help='geometry')
-    parser.add_argument('--sg_box_info_path', type=str, default='data/vsua_box_info.pkl',
-                        help='path to the pickle file containing the width and height infos of images')
 
     parser.add_argument('--start_from', type=str, default=None,
                         help="""continue training from saved model at this path. Path must contain files saved by previous training process: 
@@ -68,7 +66,7 @@ def parse_opt():
     # feature manipulation
     parser.add_argument('--norm_att_feat', type=int, default=0,
                         help='If normalize attention features')
-    parser.add_argument('--use_box', type=int, default=0,
+    parser.add_argument('--use_box', type=int, default=1,
                         help='If use box features')
     parser.add_argument('--norm_box_feat', type=int, default=0,
                         help='If use box, do we normalize box feature')

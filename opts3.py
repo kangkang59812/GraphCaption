@@ -18,10 +18,12 @@ def parse_opt():
                         help='scene graph')
     parser.add_argument('--input_sg_voc', type=str, default='/home/lkk/code/self-critical.pytorch/data/coco_pred_sg_rela.npy',
                         help='scene graph voc')
-    parser.add_argument('--input_adj', type=str, default='/home/lkk/code/self-critical.pytorch/data/coco_img_adj',
+    parser.add_argument('--input_adj', type=str, default='/home/lkk/code/self-critical.pytorch/data/coco_img_adj2',
                         help='scene graph adj')
-    parser.add_argument('--geometry_dir', type=str, default='/home/lkk/code/self-critical.pytorch/data/cocobu_geometry',
+    parser.add_argument('--geometry_dir', type=str, default='/home/lkk/code/self-critical.pytorch/data/cocobu_geometry2',
                         help='geometry')
+    parser.add_argument('--sg_box_info_path', type=str, default='data/vsua_box_info.pkl',
+                        help='path to the pickle file containing the width and height infos of images')
 
     parser.add_argument('--start_from', type=str, default=None,
                         help="""continue training from saved model at this path. Path must contain files saved by previous training process: 
@@ -86,7 +88,7 @@ def parse_opt():
                         help='After what epoch do we start finetuning the CNN? (-1 = disable; never finetune, 0 = finetune from start)')
     parser.add_argument('--seq_per_img', type=int, default=5,
                         help='number of captions to sample for each image during training. Done for efficiency since CNN forward pass is expensive. E.g. coco has 5 sents/image')
-
+    
     # Sample related
     parser.add_argument('--beam_size', type=int, default=1,
                         help='used when sample_method = greedy, indicates number of beams in beam search. Usually 2 or 3 works well. More is not better. Set this to 1 for faster runtime but a bit worse performance.')

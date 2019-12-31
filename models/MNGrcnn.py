@@ -54,10 +54,10 @@ class Attention(nn.Module):
         self.alpha_net2 = nn.Linear(self.att_hid_size, 1)
 
         self.node_gate = nn.Sequential(nn.Linear(
-           self.att_hid_size, self.att_hid_size), nn.Sigmoid())
+            self.att_hid_size, self.att_hid_size), nn.Sigmoid())
         self.rela_gate = nn.Sequential(nn.Linear(
             self.att_hid_size, self.att_hid_size), nn.Sigmoid())
-        self._init_weight()
+        # self._init_weight()
 
     def forward(self, h, node_feats, p_node_feats, rela_feats, p_rela_feats, att_masks=None, rela_masks=None):
         node_size = node_feats.numel() // node_feats.size(0) // node_feats.size(-1)
@@ -112,8 +112,8 @@ class Attention(nn.Module):
         node_res_ = torch.bmm(node_weight.unsqueeze(1), node_feats_).squeeze(1)
         rela_res_ = torch.bmm(rela_weight.unsqueeze(1), rela_feats_).squeeze(1)
 
-        node_res = node_res_*self.node_gate(rela_res_)
-        rela_res = rela_res_*self.rela_gate(node_res_)
+        node_res = node_res_*self.node_gate(node_res_)
+        rela_res = rela_res_*self.rela_gate(rela_res_)
         return node_res, rela_res
 
     def _init_weight(self):
@@ -145,6 +145,8 @@ class AttModel(CaptionModel):
         self.use_bn = getattr(opt, 'use_bn', 0)
 
         self.ss_prob = 0.0  # Schedule sampling probability
+        if opt.use_box:
+            self.att_feat_size = self.att_feat_size + 5
         # +1 for index 0,
         self.embed = nn.Sequential(nn.Embedding(self.vocab_size + 1, self.input_encoding_size),
                                    nn.ReLU(),
@@ -229,7 +231,7 @@ class AttModel(CaptionModel):
         geometry, rela_masks = self.clip_att(geometry, rela_masks)
         # embed fc and att feats
         fc_feats = self.fc_embed(fc_feats)
-        # wrapper后，补0的位置通过映射后还是0
+        # wrapper后，通过embed该为0的 行 还是0
         att_feats = pack_wrapper(self.att_embed, att_feats, att_masks)
 
         obj2vec = pack_wrapper(self.obj_embedding, obj_label, att_masks)
@@ -598,15 +600,15 @@ class GRCNN(nn.Module):
         node2rela_feat1 = pack_wrapper(
             self.node2rela_transform[0][0], torch.bmm(rela_n2r, rela), p_att_masks)
 
-        node_step1 = F.relu(node + neighbors11_feat +
-                            neighbors12_feat+neighbors13_feat + node2rela_feat1)
+        node_step1 = F.dropout(F.relu(node + neighbors11_feat +
+                                      neighbors12_feat+neighbors13_feat + node2rela_feat1))
 
         rela_sub_feat1 = pack_wrapper(
             self.rela_transform[0][0], torch.bmm(rela_sub, node), p_rela_masks)
         rela_obj_feat1 = pack_wrapper(
             self.rela_transform[0][1], torch.bmm(rela_obj, node), p_rela_masks)
 
-        rela_step1 = F.relu(rela+rela_sub_feat1+rela_obj_feat1)
+        rela_step1 = F.dropout(F.relu(rela+rela_sub_feat1+rela_obj_feat1))
         # step 1 end
 
         # step 2
@@ -627,15 +629,16 @@ class GRCNN(nn.Module):
         node2rela_feat2 = pack_wrapper(
             self.node2rela_transform[1][0], torch.bmm(rela_n2r, rela_step1), p_att_masks)
 
-        node_step2 = F.relu(node_step1 + neighbors21_feat +
-                            neighbors22_feat + node2rela_feat2)
+        node_step2 = F.dropout(F.relu(node_step1 + neighbors21_feat +
+                                      neighbors22_feat + node2rela_feat2))
 
         rela_sub_feat2 = pack_wrapper(
             self.rela_transform[1][0], torch.bmm(rela_sub, node_step1), p_rela_masks)
         rela_obj_feat2 = pack_wrapper(
             self.rela_transform[1][1], torch.bmm(rela_obj, node_step1), p_rela_masks)
 
-        rela_step2 = F.relu(rela_step1+rela_sub_feat2+rela_obj_feat2)
+        rela_step2 = F.dropout(
+            F.relu(rela_step1+rela_sub_feat2+rela_obj_feat2))
         # step 2 end
 
         # step 3
@@ -649,14 +652,16 @@ class GRCNN(nn.Module):
         node2rela_feat3 = pack_wrapper(
             self.node2rela_transform[2][0], torch.bmm(rela_n2r, rela_step2), p_att_masks)
 
-        node_step3 = F.relu(node_step2 + neighbors31_feat + node2rela_feat3)
+        node_step3 = F.dropout(
+            F.relu(node_step2 + neighbors31_feat + node2rela_feat3))
 
         rela_sub_feat3 = pack_wrapper(
             self.rela_transform[2][0], torch.bmm(rela_sub, node_step2), p_rela_masks)
         rela_obj_feat3 = pack_wrapper(
             self.rela_transform[2][1], torch.bmm(rela_obj, node_step2), p_rela_masks)
 
-        rela_step3 = F.relu(rela_step2+rela_sub_feat3+rela_obj_feat3)
+        rela_step3 = F.dropout(
+            F.relu(rela_step2+rela_sub_feat3+rela_obj_feat3))
 
         return node_step3, rela_step3
 

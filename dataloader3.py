@@ -12,11 +12,39 @@ import torch
 import torch.utils.data as data
 import six
 import pdb
-
+import pickle
 # 无关系
 exclude = [481399, 110026, 317035, 563175, 516124, 317431, 510418, 514772, 88173, 84548, 224733,
            37157, 447337, 496065, 515062, 560360, 163361, 83730, 76138, 423141, 406531, 46422, 295626,
            43347, 322211, 222990, 350067, 391689, 180515, 504382, 156002, 453348, 90365, 119718]
+yichang = np.array([[425.41144,   0., 639.2, 479.2],
+                    [0., 209.01892, 446.58472, 479.2],
+                    [37.065624,   0., 467.56372, 403.38495],
+                    [31.646069, 181.52281, 639.2, 479.2],
+                    [291.29047,   0., 556.3114, 479.2],
+                    [4.838501,   0., 639.2, 218.58691],
+                    [96.25258,   0., 432.91107, 479.2],
+                    [482.9079,  10.244525, 583.4144, 118.63218],
+                    [456.39322, 296.8479, 623.72156, 472.1024],
+                    [0., 329.16315, 561.1102, 479.2],
+                    [36.726196, 222.28362, 263.2574, 468.6128],
+                    [283.29263, 208.3899, 381.17, 314.19073],
+                    [210.09421, 199.59758, 405.85324, 427.1874],
+                    [242.75029, 187.77534, 462.7431, 463.34174],
+                    [0., 345.92828, 249.85266, 479.2],
+                    [432.5979, 134.41025, 622.3935, 342.30884],
+                    [148.65598, 299.053, 366.59564, 479.2],
+                    [148.61118, 373.4122, 305.32843, 457.97314],
+                    [289.8145, 202.179, 384.8266, 291.73315],
+                    [41.11455, 240.37146, 178.73335, 348.72162],
+                    [0.,   2.596936,  94.506386, 203.10837],
+                    [411.70273, 218.61258, 639.2, 479.2],
+                    [493.73233,  55.904247, 544.82263, 100.789345],
+                    [36.27781, 237.87163, 163.97392, 321.90616],
+                    [427.5771,  68.469284, 524.05994, 155.67178],
+                    [0.,   0.,  86.14436, 355.6267],
+                    [3.20784,  45.891586,  60.37638, 122.31523],
+                    [467.13202,   9.627314, 596.4172, 176.40234]])
 
 
 class HybridLoader:
@@ -131,10 +159,13 @@ class DataLoader(data.Dataset):
 
         self.fc_loader = HybridLoader(self.opt.input_fc_dir, '.npy')
         self.att_loader = HybridLoader(self.opt.input_att_dir, '.npz')
-        self.box_loader = HybridLoader(self.opt.input_box_dir, '.npy')
+        # self.box_loader = HybridLoader(self.opt.input_box_dir, '.npy')
         self.sg_loader = HybridLoader(self.opt.input_sg_dir, '.npy')
         self.adj_loader = HybridLoader(self.opt.input_adj, '.npz')
         self.geometry_loader = HybridLoader(self.opt.geometry_dir, '.npz')
+        if self.use_box:
+            self.sg_box_info = pickle.load(
+                open(opt.sg_box_info_path, 'rb'), encoding='latin1')
 
         # self.label_start_ix.shape[0]
         self.num_images = len(self.info['images'])
@@ -337,9 +368,9 @@ class DataLoader(data.Dataset):
         for i in range(len(att_batch)):
             data['rela_masks'][i *
                                seq_per_img:(i+1)*seq_per_img, :adj1[i].shape[0]] = 1
-            if adj1[i].size == 0:
-                data['rela_masks'][i *
-                                   seq_per_img:(i+1)*seq_per_img, 0] = 1
+            # if adj1[i].size == 0:
+            #     data['rela_masks'][i *
+            #                        seq_per_img:(i+1)*seq_per_img, 0] = 1
 
         # 计算节点特征，用到的边的特征的邻接矩阵
         data['rela_n2r'] = np.zeros(
@@ -367,8 +398,9 @@ class DataLoader(data.Dataset):
         data['geometry'] = np.zeros(
             [len(att_batch)*seq_per_img, max_rela_len, 8], dtype='float32')
         for i in range(len(att_batch)):
-            data['geometry'][i *
-                             seq_per_img:(i+1)*seq_per_img, :adj1[i].shape[0]] = geometry[i]
+            if rela_label[i].size != 0:
+                data['geometry'][i *
+                                 seq_per_img:(i+1)*seq_per_img, :adj1[i].shape[0]] = geometry[i]
 
         data['adj1'] = np.zeros(
             [len(att_batch)*seq_per_img, max_att_len, max_att_len], dtype='float32')
@@ -416,7 +448,7 @@ class DataLoader(data.Dataset):
         """This function returns a tuple that is further passed to collate_fn
         """
         ix = index  # self.split_ix[index]
-
+        image_id = str(self.info['images'][ix]['id'])
         if self.use_att:
             att_feat = self.att_loader.get(str(self.info['images'][ix]['id']))
             # Reshape to K x C
@@ -425,21 +457,11 @@ class DataLoader(data.Dataset):
                 att_feat = att_feat / \
                     np.linalg.norm(att_feat, 2, 1, keepdims=True)
             if self.use_box:
-                box_feat = self.box_loader.get(
-                    str(self.info['images'][ix]['id']))
-                # devided by image width and height
-                x1, y1, x2, y2 = np.hsplit(box_feat, 4)
-                h, w = self.info['images'][ix]['height'], self.info['images'][ix]['width']
-                # question? x2-x1+1??
-                box_feat = np.hstack(
-                    (x1/w, y1/h, x2/w, y2/h, (x2-x1)*(y2-y1)/(w*h)))
-                if self.norm_box_feat:
-                    box_feat = box_feat / \
-                        np.linalg.norm(box_feat, 2, 1, keepdims=True)
+                box_feat = self.get_box_feat(image_id)
                 att_feat = np.hstack([att_feat, box_feat])
                 # sort the features by the size of boxes
-                att_feat = np.stack(
-                    sorted(att_feat, key=lambda x: x[-1], reverse=True))
+                # att_feat = np.stack(
+                #     sorted(att_feat, key=lambda x: x[-1], reverse=True))
         else:
             att_feat = np.zeros((1, 1, 1), dtype='float32')
         if self.use_fc:
@@ -462,6 +484,20 @@ class DataLoader(data.Dataset):
         return (fc_feat,
                 att_feat, seq, adj, geometry, rela_label, obj_label, sub_obj,
                 ix)
+
+    def get_box_feat(self, image_id):
+        image = self.sg_box_info[int(image_id)]
+        if int(image_id) != 425742:
+            x1, y1, x2, y2 = np.hsplit(image['boxes'], 4)
+        else:
+            x1, y1, x2, y2 = np.hsplit(yichang, 4)
+        h, w = image['image_h'], image['image_w']
+        iw, ih = x2 - x1 + 1, y2 - y1 + 1
+        box_feat = np.hstack(
+            (0.5 * (x1 + x2) / w, 0.5 * (y1 + y2) / h, iw / w, ih / h, iw * ih / (w * h)))
+        if self.norm_box_feat:
+            box_feat = box_feat / np.linalg.norm(box_feat, 2, 1, keepdims=True)
+        return box_feat
 
     def __len__(self):
         return len(self.info['images'])

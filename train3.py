@@ -167,14 +167,14 @@ def train(opt):
             start = time.time()
 
             tmp = [data['fc_feats'], data['att_feats'], data['obj_label'], data['rela_label'], data['rela_sub'], data['rela_obj'],  data['rela_n2r'], data['geometry'],
-                   data['adj1'], data['adj2'], data['adj3'], data['labels'], data['masks'], data['att_masks'],
+                   data['adj1'], data['adj2'], data['labels'], data['masks'], data['att_masks'],
                    data['rela_masks']]
             tmp = [_ if _ is None else _.cuda() for _ in tmp]
             fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, rela_n2r, geometry,\
-                adj1, adj2, adj3, labels, masks, att_masks, rela_masks = tmp
+                adj1, adj2, labels, masks, att_masks, rela_masks = tmp
 
             optimizer.zero_grad()
-            # fc_feats: 均值特征[256*5,2048]
+            # fc_feats: 均值特征[256*5,2048],都是大于0的
             # att_feats: 区域特征[1280,61,2048], 需要mask
             # obj_label: 区域的标签[1280,61], 需要mask
             # rela: 区域关系的邻接矩阵, 需要mask
@@ -187,7 +187,7 @@ def train(opt):
             # data['gts']: [256,5,16]原始的GT列表
             # torch.arange(0, len(data['gts'])) 0-255
             model_out = dp_lw_model(fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, rela_n2r, geometry,
-                                    adj1, adj2, adj3, labels, masks, att_masks, rela_masks,
+                                    adj1, adj2, labels, masks, att_masks, rela_masks,
                                     data['gts'], torch.arange(0, len(data['gts'])), sc_flag)
 
             loss = model_out['loss'].mean()

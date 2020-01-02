@@ -67,7 +67,7 @@ class HybridLoader:
         if 'adj' in db_path:
             # 必须是对象，不可以是file
             self.loader = lambda x: (np.load(x, allow_pickle=True)['adj1'], np.load(x)[
-                                     'adj2'], np.load(x)['adj3'])
+                                     'adj2'])
         if 'geometry' in db_path:
             self.loader = lambda x: (np.load(x, allow_pickle=True)['feats'],
                                      np.load(x, allow_pickle=True)['image_h'],
@@ -238,7 +238,6 @@ class DataLoader(data.Dataset):
         label_batch = []
         adj1_batch = []
         adj2_batch = []
-        adj3_batch = []
         geometry = []
         rela_label = []
         obj_label = []
@@ -259,7 +258,7 @@ class DataLoader(data.Dataset):
             att_batch.append(tmp_att)
             adj1_batch.append(tmp_adj[0])  # adj1
             adj2_batch.append(tmp_adj[1])  # adj2
-            adj3_batch.append(tmp_adj[2])  # adj3
+
             geometry.append(tmp_geometry)
             rela_label.append(tmp_rela_label)
             obj_label.append(tmp_obj_label)
@@ -288,9 +287,9 @@ class DataLoader(data.Dataset):
         # #sort by att_feat length
         # fc_batch, att_batch, label_batch, gts, infos = \
         #     zip(*sorted(zip(fc_batch, att_batch, np.vsplit(label_batch, batch_size), gts, infos), key=lambda x: len(x[1]), reverse=True))
-        fc_batch, att_batch, label_batch, gts, infos, adj1, adj2, adj3, geometry, \
+        fc_batch, att_batch, label_batch, gts, infos, adj1, adj2, geometry, \
             rela_label, obj_label, sub_obj = zip(*sorted(zip(fc_batch, att_batch, label_batch,
-                                                             gts, infos, adj1_batch, adj2_batch, adj3_batch, geometry, rela_label, obj_label, sub_obj), key=lambda x: 0, reverse=True))
+                                                             gts, infos, adj1_batch, adj2_batch, geometry, rela_label, obj_label, sub_obj), key=lambda x: 0, reverse=True))
         data = {}
         data['fc_feats'] = np.stack(
             sum([[_]*seq_per_img for _ in fc_batch], []))
@@ -405,15 +404,11 @@ class DataLoader(data.Dataset):
             [len(att_batch)*seq_per_img, max_att_len, max_att_len], dtype='float32')
         data['adj2'] = np.zeros(
             [len(att_batch)*seq_per_img, max_att_len, max_att_len], dtype='float32')
-        data['adj3'] = np.zeros(
-            [len(att_batch)*seq_per_img, max_att_len, max_att_len], dtype='float32')
 
         for i in range(len(att_batch)):
             adj_dis1 = np.zeros(
                 (max_att_len, max_att_len))
             adj_dis2 = np.zeros(
-                (max_att_len, max_att_len))
-            adj_dis3 = np.zeros(
                 (max_att_len, max_att_len))
 
             if adj1_batch[i].size != 0:
@@ -427,12 +422,6 @@ class DataLoader(data.Dataset):
             adj_dis2 = adj_dis2[np.newaxis, :]
             adj_dis2 = np.repeat(adj_dis2, seq_per_img, axis=0)
             data['adj2'][i * seq_per_img:(i+1)*seq_per_img, :] = adj_dis2
-
-            if adj3_batch[i].size != 0:
-                adj_dis3[adj3_batch[i][:, 0], adj3_batch[i][:, 1]] = 1
-            adj_dis3 = adj_dis3[np.newaxis, :]
-            adj_dis3 = np.repeat(adj_dis3, seq_per_img, axis=0)
-            data['adj3'][i * seq_per_img:(i+1)*seq_per_img, :] = adj_dis3
 
         # Turn all ndarray to torch tensor
         data = {k: torch.from_numpy(v) if type(
@@ -467,7 +456,8 @@ class DataLoader(data.Dataset):
                 box_feat = np.hstack(
                     (0.5 * (x1 + x2) / w, 0.5 * (y1 + y2) / h, iw / w, ih / h, iw * ih / (w * h)))
                 if self.norm_box_feat:
-                    box_feat = box_feat / np.linalg.norm(box_feat, 2, 1, keepdims=True)
+                    box_feat = box_feat / \
+                        np.linalg.norm(box_feat, 2, 1, keepdims=True)
 
                 att_feat = np.hstack([att_feat, box_feat])
         else:

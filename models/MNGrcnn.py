@@ -285,14 +285,11 @@ class AttModel(CaptionModel):
             gcn_obj2vec, gcn_rela2vec = p_obj2vec, p_rela2vec
             gcn_att_feats, gcn_geometry = p_att_feats, p_geometry
 
-        node_feats2 = torch.cat((gcn_att_feats, gcn_obj2vec), 2)
-        rela_feats2 = torch.cat((gcn_geometry, gcn_rela2vec), 2)
+        snode_feats = pack_wrapper(self.snode2att, gcn_obj2vec, p_att_masks)
+        vnode_feats = pack_wrapper(self.vnode2att, gcn_att_feats, p_att_masks)
 
-        node_feats = pack_wrapper(self.node2merge, node_feats2, p_att_masks)
-        rela_feats = pack_wrapper(self.rela2merge, rela_feats2, p_rela_masks)
-
-        p_node_feats = pack_wrapper(self.node2att, node_feats, p_att_masks)
-        p_rela_feats = pack_wrapper(self.rela2att, rela_feats, p_rela_masks)
+        srela_feats = pack_wrapper(self.srela2att, gcn_rela2vec, p_rela_masks)
+        vrela_feats = pack_wrapper(self.vrela2att, gcn_geometry, p_rela_masks)
 
         assert beam_size <= self.vocab_size + \
             1, 'lets assume this for now, otherwise this corner case causes a few headaches down the road. can be dealt with in future if needed'
@@ -305,18 +302,26 @@ class AttModel(CaptionModel):
             state = self.init_hidden(beam_size)
             tmp_fc_feats = p_fc_feats[k:k +
                                       1].expand(beam_size, p_fc_feats.size(1))
-            # tmp_att_feats = p_att_feats[k:k+1].expand(*((beam_size,)+p_att_feats.size()[1:])).contiguous()
-            # tmp_obj2vec = p_obj2vec[k:k+1].expand(*((beam_size,)+p_obj2vec.size()[1:])).contiguous()
-            # tmp_rela2vec = p_rela2vec[k:k+1].expand(*((beam_size,)+p_rela2vec.size()[1:])).contiguous()
-            # tmp_geometry = p_geometry[k:k+1].expand(*((beam_size,)+p_geometry.size()[1:])).contiguous()
-            tmp_node_feats = node_feats[k:k+1].expand(
-                *((beam_size,)+node_feats.size()[1:])).contiguous()
-            tmp_p_node_feats = p_node_feats[k:k+1].expand(
-                *((beam_size,)+p_node_feats.size()[1:])).contiguous()
-            tmp_rela_feats = rela_feats[k:k+1].expand(
-                *((beam_size,)+rela_feats.size()[1:])).contiguous()
-            tmp_p_rela_feats = p_rela_feats[k:k+1].expand(
-                *((beam_size,)+p_rela_feats.size()[1:])).contiguous()
+          
+            tmp_gcn_obj2vec = gcn_obj2vec[k:k+1].expand(
+                *((beam_size,)+gcn_obj2vec.size()[1:])).contiguous()
+            tmp_snode_feats = snode_feats[k:k+1].expand(
+                *((beam_size,)+snode_feats.size()[1:])).contiguous()
+
+            tmp_gcn_rela2vec = gcn_rela2vec[k:k+1].expand(
+                *((beam_size,)+gcn_rela2vec.size()[1:])).contiguous()
+            tmp_srela_feats = srela_feats[k:k+1].expand(
+                *((beam_size,)+srela_feats.size()[1:])).contiguous()
+
+            tmp_gcn_att_feats = gcn_att_feats[k:k+1].expand(
+                *((beam_size,)+gcn_att_feats.size()[1:])).contiguous()
+            tmp_vnode_feats = vnode_feats[k:k+1].expand(
+                *((beam_size,)+vnode_feats.size()[1:])).contiguous()
+
+            tmp_gcn_geometry = gcn_geometry[k:k+1].expand(
+                *((beam_size,)+gcn_geometry.size()[1:])).contiguous()
+            tmp_vrela_feats = vrela_feats[k:k+1].expand(
+                *((beam_size,)+vrela_feats.size()[1:])).contiguous()
 
             tmp_rela_masks = p_rela_masks[k:k+1].expand(
                 *((beam_size,)+p_rela_masks.size()[1:])).contiguous()
@@ -328,10 +333,10 @@ class AttModel(CaptionModel):
                     it = fc_feats.new_zeros([beam_size], dtype=torch.long)
 
                 logprobs, state = self.get_logprobs_state(
-                    it, tmp_fc_feats, tmp_node_feats, tmp_p_node_feats, tmp_rela_feats, tmp_p_rela_feats, tmp_att_masks, tmp_rela_masks, state)
+                    it, tmp_fc_feats, tmp_gcn_obj2vec, tmp_snode_feats, tmp_gcn_rela2vec, tmp_srela_feats,  tmp_gcn_att_feats, tmp_vnode_feats, tmp_gcn_geometry, tmp_vrela_feats, tmp_att_masks, tmp_rela_masks, state)
 
             self.done_beams[k] = self.beam_search(
-                state, logprobs, tmp_fc_feats, tmp_node_feats, tmp_p_node_feats, tmp_rela_feats, tmp_p_rela_feats, tmp_att_masks, tmp_rela_masks, opt=opt)
+                state, logprobs, tmp_fc_feats, tmp_gcn_obj2vec, tmp_snode_feats, tmp_gcn_rela2vec, tmp_srela_feats,  tmp_gcn_att_feats, tmp_vnode_feats, tmp_gcn_geometry, tmp_vrela_feats, tmp_att_masks, tmp_rela_masks, opt=opt)
             # the first beam has highest cumulative score
             seq[:, k] = self.done_beams[k][0]['seq']
             seqLogprobs[:, k] = self.done_beams[k][0]['logps']
@@ -367,14 +372,11 @@ class AttModel(CaptionModel):
             gcn_obj2vec, gcn_rela2vec = p_obj2vec, p_rela2vec
             gcn_att_feats, gcn_geometry = p_att_feats, p_geometry
 
-        node_feats2 = torch.cat((gcn_att_feats, gcn_obj2vec), 2)
-        rela_feats2 = torch.cat((gcn_geometry, gcn_rela2vec), 2)
+        snode_feats = pack_wrapper(self.snode2att, gcn_obj2vec, p_att_masks)
+        vnode_feats = pack_wrapper(self.vnode2att, gcn_att_feats, p_att_masks)
 
-        node_feats = pack_wrapper(self.node2merge, node_feats2, p_att_masks)
-        rela_feats = pack_wrapper(self.rela2merge, rela_feats2, p_rela_masks)
-
-        p_node_feats = pack_wrapper(self.node2att, node_feats, p_att_masks)
-        p_rela_feats = pack_wrapper(self.rela2att, rela_feats, p_rela_masks)
+        srela_feats = pack_wrapper(self.srela2att, gcn_rela2vec, p_rela_masks)
+        vrela_feats = pack_wrapper(self.vrela2att, gcn_geometry, p_rela_masks)
 
         trigrams = []  # will be a list of batch_size dictionaries
 
@@ -386,7 +388,7 @@ class AttModel(CaptionModel):
                 it = fc_feats.new_zeros(batch_size, dtype=torch.long)
 
             logprobs, state = self.get_logprobs_state(
-                it, p_fc_feats, node_feats, p_node_feats, rela_feats, p_rela_feats,  p_att_masks, p_rela_masks, state)
+                it, p_fc_feats, gcn_obj2vec, snode_feats, gcn_rela2vec, srela_feats,  gcn_att_feats, vnode_feats, gcn_geometry, vrela_feats, p_att_masks, p_rela_masks, state)
 
             if decoding_constraint and t > 0:
                 tmp = logprobs.new_zeros(logprobs.size())
@@ -465,7 +467,7 @@ class GRCNN(nn.Module):
         self.node2node_transform = nn.ModuleList()
         self.node2rela_transform = nn.ModuleList()
         self.rela_transform = nn.ModuleList()
-
+        self.p = 0.
         for i in range(self.feat_update_step):
             self.node2node_transform.append(
                 nn.ModuleList())
@@ -531,7 +533,7 @@ class GRCNN(nn.Module):
             self.node2rela_transform[0][0], torch.bmm(rela_n2r, rela), p_att_masks)
 
         node_step1 = F.dropout(F.relu(node + neighbors11_feat +
-                                      neighbors12_feat + node2rela_feat1), p=0.3)
+                                      neighbors12_feat + node2rela_feat1), p=self.p)
 
         rela_sub_feat1 = pack_wrapper(
             self.rela_transform[0][0], torch.bmm(rela_sub, node), p_rela_masks)
@@ -539,7 +541,7 @@ class GRCNN(nn.Module):
             self.rela_transform[0][1], torch.bmm(rela_obj, node), p_rela_masks)
 
         rela_step1 = F.dropout(
-            F.relu(rela+rela_sub_feat1+rela_obj_feat1), p=0.3)
+            F.relu(rela+rela_sub_feat1+rela_obj_feat1), p=self.p)
         # step 1 end
 
         # step 2
@@ -556,7 +558,7 @@ class GRCNN(nn.Module):
             self.node2rela_transform[1][0], torch.bmm(rela_n2r, rela_step1), p_att_masks)
 
         node_step2 = F.dropout(
-            F.relu(node_step1 + neighbors21_feat + node2rela_feat2), p=0.3)
+            F.relu(node_step1 + neighbors21_feat + node2rela_feat2), p=self.p)
 
         rela_sub_feat2 = pack_wrapper(
             self.rela_transform[1][0], torch.bmm(rela_sub, node_step1), p_rela_masks)
@@ -564,7 +566,7 @@ class GRCNN(nn.Module):
             self.rela_transform[1][1], torch.bmm(rela_obj, node_step1), p_rela_masks)
 
         rela_step2 = F.dropout(
-            F.relu(rela_step1+rela_sub_feat2+rela_obj_feat2), p=0.3)
+            F.relu(rela_step1+rela_sub_feat2+rela_obj_feat2), p=self.p)
         # step 2 end
 
         return node_step2, rela_step2

@@ -3,17 +3,25 @@ from __future__ import division
 from __future__ import print_function
 
 import torch
-import opts3 as opts
+import torch.nn as nn
+import torch.optim as optim
+
+import numpy as np
+
 import time
+import os
+from six.moves import cPickle
+import traceback
+
+import opts3 as opts
+import models
+from dataloader3 import *
+import skimage.io
 import eval_utils as eval_utils
 import misc.utils as utils
 from misc.rewards import init_scorer, get_self_critical_reward
 from misc.loss_wrapper import LossWrapper
-import models
-from dataloader3 import *
-import traceback
-import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+import time
 try:
     import tensorboardX as tb
 except ImportError:
@@ -30,10 +38,12 @@ def train(opt):
     # Deal with feature things before anything
     opt.use_fc, opt.use_att = utils.if_use_feat(opt.caption_model)
 
+    acc_steps = getattr(opt, 'acc_steps', 1)
+
     loader = DataLoader(opt)
     opt.vocab_size = loader.vocab_size
     opt.seq_length = loader.seq_length
-    # data = loader.get_batch('train')
+
     tb_summary_writer = tb and tb.SummaryWriter(opt.checkpoint_path)
 
     infos = {}
@@ -74,15 +84,6 @@ def train(opt):
         best_val_score = infos.get('best_val_score', None)
 
     opt.vocab = loader.get_vocab()
-
-    # DataParallel
-    # model = models.setup(opt).cuda()
-    # del opt.vocab
-    # dp_model = torch.nn.DataParallel(model)
-    # lw_model = LossWrapper(model, opt)
-    # dp_lw_model = torch.nn.DataParallel(lw_model)
-
-    # not DataParallel
     dp_model = models.setup(opt).cuda()
     model = dp_model
     del opt.vocab
@@ -94,7 +95,8 @@ def train(opt):
     dp_lw_model.train()
 
     if opt.noamopt:
-        assert opt.caption_model == 'transformer', 'noamopt can only work with transformer'
+        assert opt.caption_model in [
+            'transformer', 'mngrcnn'], 'noamopt can only work with transformer'
         optimizer = utils.get_std_opt(
             model, factor=opt.noamopt_factor, warmup=opt.noamopt_warmup)
         optimizer._step = iteration
@@ -159,13 +161,19 @@ def train(opt):
                 epoch_done = False
 
             start = time.time()
+            if (opt.use_warmup == 1) and (iteration < opt.noamopt_warmup):
+                opt.current_lr = opt.learning_rate * \
+                    (iteration+1) / opt.noamopt_warmup
+                utils.set_lr(optimizer, opt.current_lr)
             # Load data from train split (0)
             data = loader.get_batch('train')
             print('Read data:', time.time() - start)
 
+            if (iteration % acc_steps == 0):
+                optimizer.zero_grad()
+
             torch.cuda.synchronize()
             start = time.time()
-
             tmp = [data['fc_feats'], data['att_feats'], data['obj_label'], data['rela_label'], data['rela_sub'], data['rela_obj'],  data['rela_n2r'], data['geometry'],
                    data['adj1'], data['adj2'], data['labels'], data['masks'], data['att_masks'],
                    data['rela_masks']]
@@ -173,37 +181,26 @@ def train(opt):
             fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, rela_n2r, geometry,\
                 adj1, adj2, labels, masks, att_masks, rela_masks = tmp
 
-            optimizer.zero_grad()
-            # fc_feats: 均值特征[256*5,2048],都是大于0的
-            # att_feats: 区域特征[1280,61,2048], 需要mask
-            # obj_label: 区域的标签[1280,61], 需要mask
-            # rela: 区域关系的邻接矩阵, 需要mask
-            # geometry : 几何关系特征[1280,61,4], 需要mask
-            # adj1, adj2, adj3：邻接矩阵 [1280,61,61]
-            # labels: caption的标签[1280,18]，开头有0填充
-            # masks：caption的mask[1280,18]，从开头的0到结尾的0
-            # att_masks：区域特征mask[1280,61]
-            # rela_masks: 区域关系标签的mask[1280,57]
-            # data['gts']: [256,5,16]原始的GT列表
-            # torch.arange(0, len(data['gts'])) 0-255
             model_out = dp_lw_model(fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, rela_n2r, geometry,
                                     adj1, adj2, labels, masks, att_masks, rela_masks,
                                     data['gts'], torch.arange(0, len(data['gts'])), sc_flag)
 
             loss = model_out['loss'].mean()
+            loss_sp = loss / acc_steps
 
-            loss.backward()
-            utils.clip_gradient(optimizer, opt.grad_clip)
-            optimizer.step()
-            train_loss = loss.item()
+            loss_sp.backward()
+            if ((iteration+1) % acc_steps == 0):
+                utils.clip_gradient(optimizer, opt.grad_clip)
+                optimizer.step()
             torch.cuda.synchronize()
+            train_loss = loss.item()
             end = time.time()
             if not sc_flag:
-                print("iter {} (epoch {}), train_loss = {:.3f}, time/batch = {:.3f}"
-                      .format(iteration, epoch, train_loss, end - start))
+                print("{}: iter {} (epoch {}), train_loss = {:.3f}, time/batch = {:.3f}"
+                      .format(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), iteration, epoch, train_loss, end - start))
             else:
-                print("iter {} (epoch {}), avg_reward = {:.3f}, time/batch = {:.3f}"
-                      .format(iteration, epoch, model_out['reward'].mean(), end - start))
+                print("{}: iter {} (epoch {}), avg_reward = {:.3f}, time/batch = {:.3f}"
+                      .format(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), iteration, epoch, model_out['reward'].mean(), end - start))
 
             # Update the iteration and epoch
             iteration += 1
@@ -242,11 +239,10 @@ def train(opt):
             if (iteration % opt.save_checkpoint_every == 0):
                 # eval model
                 eval_kwargs = {'split': 'val',
-                               'dataset': opt.input_json,
-                               'beam_size': 3}
+                               'dataset': opt.input_json}
                 eval_kwargs.update(vars(opt))
                 val_loss, predictions, lang_stats = eval_utils.eval_split(
-                    model, lw_model.crit, loader, eval_kwargs)
+                    dp_model, lw_model.crit, loader, eval_kwargs)
 
                 if opt.reduce_on_plateau:
                     if 'CIDEr' in lang_stats:

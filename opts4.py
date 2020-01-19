@@ -14,15 +14,6 @@ def parse_opt():
                         help='path to the directory containing the boxes of att feats')
     parser.add_argument('--input_label_h5', type=str, default='/home/lkk/code/self-critical.pytorch/data/cocotalk_label.h5',
                         help='path to the h5file containing the preprocessed dataset')
-    parser.add_argument('--input_sg_dir', type=str, default='/home/lkk/code/self-critical.pytorch/data/coco_img_sg',
-                        help='scene graph')
-    parser.add_argument('--input_sg_voc', type=str, default='/home/lkk/code/self-critical.pytorch/data/coco_pred_sg_rela.npy',
-                        help='scene graph voc')
-    parser.add_argument('--input_adj', type=str, default='/home/lkk/code/self-critical.pytorch/data/coco_img_adj2',
-                        help='scene graph adj')
-    parser.add_argument('--geometry_dir', type=str, default='/home/lkk/code/self-critical.pytorch/data/cocobu_geometry2',
-                        help='geometry')
-
     parser.add_argument('--start_from', type=str, default=None,
                         help="""continue training from saved model at this path. Path must contain files saved by previous training process: 
                         'infos.pkl'         : configuration;
@@ -34,15 +25,15 @@ def parse_opt():
                         help='Cached token file for calculating cider score during self critical training.')
 
     # Model settings
-    parser.add_argument('--caption_model', type=str, default="mngrcnn",
-                        help='mngrcnn, show_tell, show_attend_tell, all_img, fc, att2in, att2in2, att2all2, adaatt, adaattmo, topdown, stackatt, denseatt, transformer')
-    parser.add_argument('--rnn_size', type=int, default=1024,
+    parser.add_argument('--caption_model', type=str, default="show_tell",
+                        help='show_tell, show_attend_tell, all_img, fc, att2in, att2in2, att2all2, adaatt, adaattmo, topdown, stackatt, denseatt, transformer')
+    parser.add_argument('--rnn_size', type=int, default=512,
                         help='size of the rnn in number of hidden nodes in each layer')
     parser.add_argument('--num_layers', type=int, default=1,
                         help='number of layers in the RNN')
     parser.add_argument('--rnn_type', type=str, default='lstm',
                         help='rnn, gru, or lstm')
-    parser.add_argument('--input_encoding_size', type=int, default=1024,
+    parser.add_argument('--input_encoding_size', type=int, default=512,
                         help='the encoding size of each token in the vocabulary, and the image.')
     parser.add_argument('--att_hid_size', type=int, default=512,
                         help='the hidden size of the attention MLP; only useful in show_attend_tell; 0 if not using hidden layer')
@@ -50,42 +41,39 @@ def parse_opt():
                         help='2048 for resnet, 4096 for vgg')
     parser.add_argument('--att_feat_size', type=int, default=2048,
                         help='2048 for resnet, 512 for vgg')
-    parser.add_argument('--obj_voc_size', type=int, default=305,
-                        help='305类')
-    parser.add_argument('--rela_voc_size', type=int, default=64,
-                        help='64种关系')
-    parser.add_argument('--geometry_size', type=int, default=8,
-                        help='几何关系维度')
     parser.add_argument('--logit_layers', type=int, default=1,
                         help='number of layers in the RNN')
-    parser.add_argument('--use_gcn', type=bool, default=False,
-                        help='use gcn')
+
     parser.add_argument('--use_bn', type=int, default=0,
                         help='If 1, then do batch_normalization first in att_embed, if 2 then do bn both in the beginning and the end of att_embed')
-    parser.add_argument('--acc_steps', type=int, default=1,
-                        help='accumulation steps')
 
-    # AoA
+    # AoA settings
     parser.add_argument('--mean_feats', type=int, default=1,
                         help='use mean pooling of feats?')
     parser.add_argument('--refine', type=int, default=1,
                         help='refining feature vectors?')
     parser.add_argument('--refine_aoa', type=int, default=1,
                         help='use aoa in the refining module?')
-    parser.add_argument('--use_ff', type=int, default=0,
+    parser.add_argument('--use_ff', type=int, default=1,
                         help='keep feed-forward layer in the refining module?')
     parser.add_argument('--dropout_aoa', type=float, default=0.3,
                         help='dropout_aoa in the refining module?')
 
     parser.add_argument('--ctx_drop', type=int, default=0,
                         help='apply dropout to the context vector before fed into LSTM?')
-    
+    parser.add_argument('--decoder_type', type=str, default='AoA',
+                        help='AoA, LSTM, base')
     parser.add_argument('--use_multi_head', type=int, default=2,
                         help='use multi head attention? 0 for addictive single head; 1 for addictive multi head; 2 for productive multi head.')
     parser.add_argument('--num_heads', type=int, default=8,
                         help='number of attention heads?')
     parser.add_argument('--multi_head_scale', type=int, default=1,
                         help='scale q,k,v?')
+
+    parser.add_argument('--use_warmup', type=int, default=0,
+                        help='warm up the learing rate?')
+    parser.add_argument('--acc_steps', type=int, default=1,
+                        help='accumulation steps')
 
     # feature manipulation
     parser.add_argument('--norm_att_feat', type=int, default=0,
@@ -96,12 +84,10 @@ def parse_opt():
                         help='If use box, do we normalize box feature')
 
     # Optimization: General
-    parser.add_argument('--max_epochs', type=int, default=50,
+    parser.add_argument('--max_epochs', type=int, default=-1,
                         help='number of epochs')
-    parser.add_argument('--batch_size', type=int, default=64,
+    parser.add_argument('--batch_size', type=int, default=16,
                         help='minibatch size')
-    parser.add_argument('--num_worker', type=int, default=0,
-                        help='num_worker of dataloader')
     parser.add_argument('--grad_clip', type=float, default=0.1,  # 5.,
                         help='clip gradients at this value')
     parser.add_argument('--drop_prob_lm', type=float, default=0.5,
@@ -110,8 +96,6 @@ def parse_opt():
                         help='After what epoch do we start finetuning the CNN? (-1 = disable; never finetune, 0 = finetune from start)')
     parser.add_argument('--seq_per_img', type=int, default=5,
                         help='number of captions to sample for each image during training. Done for efficiency since CNN forward pass is expensive. E.g. coco has 5 sents/image')
-    parser.add_argument('--use_warmup', type=int, default=0,
-                        help='warm up the learing rate?')
 
     # Sample related
     parser.add_argument('--beam_size', type=int, default=1,
@@ -128,9 +112,9 @@ def parse_opt():
     # Optimization: for the Language Model
     parser.add_argument('--optim', type=str, default='adam',
                         help='what update to use? rmsprop|sgd|sgdmom|adagrad|adam')
-    parser.add_argument('--learning_rate', type=float, default=5e-4,
+    parser.add_argument('--learning_rate', type=float, default=4e-4,
                         help='learning rate')
-    parser.add_argument('--learning_rate_decay_start', type=int, default=0,
+    parser.add_argument('--learning_rate_decay_start', type=int, default=-1,
                         help='at what iteration to start decaying learning rate? (-1 = dont) (in epoch)')
     parser.add_argument('--learning_rate_decay_every', type=int, default=3,
                         help='every how many iterations thereafter to drop LR?(in epoch)')
@@ -166,23 +150,23 @@ def parse_opt():
                         help='Maximum scheduled sampling prob.')
 
     # Evaluation/Checkpointing
-    parser.add_argument('--val_images_use', type=int, default=-1,
+    parser.add_argument('--val_images_use', type=int, default=3200,
                         help='how many images to use when periodically evaluating the validation loss? (-1 = all)')
-    parser.add_argument('--save_checkpoint_every', type=int, default=2000,
+    parser.add_argument('--save_checkpoint_every', type=int, default=2500,
                         help='how often to save a model checkpoint (in iterations)?')
     parser.add_argument('--save_history_ckpt', type=int, default=0,
                         help='If save checkpoints at every save point')
-    parser.add_argument('--checkpoint_path', type=str, default='debug',
+    parser.add_argument('--checkpoint_path', type=str, default='save',
                         help='directory to store checkpointed models')
-    parser.add_argument('--language_eval', type=int, default=1,
+    parser.add_argument('--language_eval', type=int, default=0,
                         help='Evaluate language as well (1 = yes, 0 = no)? BLEU/CIDEr/METEOR/ROUGE_L? requires coco-caption code from Github.')
-    parser.add_argument('--losses_log_every', type=int, default=10,
+    parser.add_argument('--losses_log_every', type=int, default=25,
                         help='How often do we snapshot losses, for inclusion in the progress dump? (0 = disable)')
     parser.add_argument('--load_best_score', type=int, default=1,
                         help='Do we load previous best score when resuming training.')
 
     # misc
-    parser.add_argument('--id', type=str, default='fc',
+    parser.add_argument('--id', type=str, default='',
                         help='an id identifying this run/job. used in cross-val and appended when writing progress files')
     parser.add_argument('--train_only', type=int, default=0,
                         help='if true then use 80k, else use 110k')
@@ -214,23 +198,23 @@ def parse_opt():
 
 def add_eval_options(parser):
     # Basic options
-    parser.add_argument('--batch_size', type=int, default=256,
+    parser.add_argument('--batch_size', type=int, default=0,
                         help='if > 0 then overrule, otherwise load from checkpoint.')
     parser.add_argument('--num_images', type=int, default=-1,
                         help='how many images to use when periodically evaluating the loss? (-1 = all)')
-    parser.add_argument('--language_eval', type=int, default=1,
+    parser.add_argument('--language_eval', type=int, default=0,
                         help='Evaluate language as well (1 = yes, 0 = no)? BLEU/CIDEr/METEOR/ROUGE_L? requires coco-caption code from Github.')
     parser.add_argument('--dump_images', type=int, default=1,
                         help='Dump images into vis/imgs folder for vis? (1=yes,0=no)')
     parser.add_argument('--dump_json', type=int, default=1,
                         help='Dump json with predictions into vis folder? (1=yes,0=no)')
-    parser.add_argument('--dump_path', type=int, default=1,
+    parser.add_argument('--dump_path', type=int, default=0,
                         help='Write image paths along with predictions into vis json? (1=yes,0=no)')
 
     # Sampling options
     parser.add_argument('--sample_method', type=str, default='greedy',
                         help='greedy; sample; gumbel; top<int>, top<0-1>')
-    parser.add_argument('--beam_size', type=int, default=3,
+    parser.add_argument('--beam_size', type=int, default=2,
                         help='indicates number of beams in beam search. Usually 2 or 3 works well. More is not better. Set this to 1 for faster runtime but a bit worse performance.')
     parser.add_argument('--max_length', type=int, default=20,
                         help='Maximum length during sampling')
@@ -251,18 +235,18 @@ def add_eval_options(parser):
     # For evaluation on a folder of images:
     parser.add_argument('--image_folder', type=str, default='',
                         help='If this is nonempty then will predict on the images in this folder path')
-    parser.add_argument('--image_root', type=str, default='/home/lkk/datasets/coco2014',
+    parser.add_argument('--image_root', type=str, default='',
                         help='In case the image paths have to be preprended with a root path to an image folder')
     # For evaluation on MSCOCO images from some split:
-    parser.add_argument('--input_fc_dir', type=str, default='/home/lkk/code/self-critical.pytorch/data/cocobu_fc',
+    parser.add_argument('--input_fc_dir', type=str, default='',
                         help='path to the h5file containing the preprocessed dataset')
-    parser.add_argument('--input_att_dir', type=str, default='/home/lkk/code/self-critical.pytorch/data/cocobu_att',
+    parser.add_argument('--input_att_dir', type=str, default='',
                         help='path to the h5file containing the preprocessed dataset')
-    parser.add_argument('--input_box_dir', type=str, default='/home/lkk/code/self-critical.pytorch/data/cocobu_box',
+    parser.add_argument('--input_box_dir', type=str, default='',
                         help='path to the h5file containing the preprocessed dataset')
-    parser.add_argument('--input_label_h5', type=str, default='/home/lkk/code/self-critical.pytorch/data/cocotalk_label.h5',
+    parser.add_argument('--input_label_h5', type=str, default='',
                         help='path to the h5file containing the preprocessed dataset')
-    parser.add_argument('--input_json', type=str, default='/home/lkk/code/self-critical.pytorch/data/cocotalk.json',
+    parser.add_argument('--input_json', type=str, default='',
                         help='path to the json file containing additional info and vocab. empty = fetch from model checkpoint.')
     parser.add_argument('--split', type=str, default='test',
                         help='if running on MSCOCO images, which split to use: val|test|train')

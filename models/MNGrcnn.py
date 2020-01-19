@@ -10,6 +10,9 @@ from torch.nn.utils.rnn import PackedSequence, pack_padded_sequence, pad_packed_
 import misc.utils as utils
 from .CaptionModel import CaptionModel
 from .AttModel import Attention as Att
+from .TransformerModel import LayerNorm, attention, clones, SublayerConnection, PositionwiseFeedForward
+from functools import reduce
+
 bad_endings = ['a', 'an', 'the', 'in', 'for', 'at', 'of', 'with',
                'before', 'after', 'on', 'upon', 'near', 'to', 'is', 'are', 'am']
 bad_endings += ['the']
@@ -108,10 +111,16 @@ class AttModel(CaptionModel):
         self.embed = nn.Sequential(nn.Embedding(self.vocab_size + 1, self.input_encoding_size),
                                    nn.ReLU(),
                                    nn.Dropout(self.drop_prob_lm))
-        self.fc_embed = nn.Sequential(nn.Linear(self.fc_feat_size, self.input_encoding_size),
+        self.fc_embed = nn.Sequential(nn.Linear(self.fc_feat_size, self.rnn_size),
                                       nn.ReLU(),
                                       nn.Dropout(self.drop_prob_lm))
-        self.att_embed = nn.Sequential(*(
+        self.att_embed1 = nn.Sequential(*(
+            ((nn.BatchNorm1d(self.att_feat_size),) if self.use_bn else ()) +
+            (nn.Linear(self.att_feat_size, self.input_encoding_size),
+             nn.ReLU(),
+             nn.Dropout(self.drop_prob_lm)) +
+            ((nn.BatchNorm1d(self.input_encoding_size),) if self.use_bn == 2 else ())))
+        self.att_embed2 = nn.Sequential(*(
             ((nn.BatchNorm1d(self.att_feat_size),) if self.use_bn else ()) +
             (nn.Linear(self.att_feat_size, self.input_encoding_size),
              nn.ReLU(),
@@ -128,9 +137,11 @@ class AttModel(CaptionModel):
                                                 nn.ReLU(),
                                                 nn.Dropout(self.drop_prob_lm))
 
-        self.s_gcnn = GRCNN(self.input_encoding_size, self.input_encoding_size, 2)
+        self.s_gcnn = GRCNN(self.input_encoding_size,
+                            self.input_encoding_size, 2)
 
-        self.v_gcnn = GRCNN(self.input_encoding_size, self.input_encoding_size, 2)
+        self.v_gcnn = GRCNN(self.input_encoding_size,
+                            self.input_encoding_size, 2)
 
         # 最终输出层，只用1层全连接
         self.logit_layers = getattr(opt, 'logit_layers', 1)
@@ -143,6 +154,7 @@ class AttModel(CaptionModel):
                 *(reduce(lambda x, y: x+y, self.logit) + [nn.Linear(self.rnn_size, self.vocab_size + 1)]))
 
         # 计算attention用的
+        self.ctx2att = nn.Linear(self.input_encoding_size, self.att_hid_size)
 
         self.snode2att = nn.Linear(self.input_encoding_size, self.att_hid_size)
         self.vnode2att = nn.Linear(self.input_encoding_size, self.att_hid_size)
@@ -175,31 +187,6 @@ class AttModel(CaptionModel):
             att_masks = att_masks[:, :max_len].contiguous()
         return att_feats, att_masks
 
-    def _prepare_feature(self, fc_feats, att_feats, obj_label, rela_label, geometry, att_masks, rela_masks):
-        att_feats, att_masks = self.clip_att(att_feats, att_masks)
-        obj_label, att_masks = self.clip_att(obj_label, att_masks)
-
-        rela_label, rela_masks = self.clip_att(rela_label, rela_masks)
-        geometry, rela_masks = self.clip_att(geometry, rela_masks)
-        # embed fc and att feats
-        fc_feats = self.fc_embed(fc_feats)
-        # wrapper后，通过embed该为0的 行 还是0
-        att_feats = pack_wrapper(self.att_embed, att_feats, att_masks)
-
-        obj2vec = pack_wrapper(self.obj_embedding, obj_label, att_masks)
-        # obj2vec = self.obj_embedding(obj_label)
-
-        rela2vec = pack_wrapper(self.rela_embedding, rela_label, rela_masks)
-        # rela2vec = self.rela_embedding(rela_label)
-
-        geometry_feats = pack_wrapper(
-            self.geometry_embedding, geometry, rela_masks)
-        # geometry_feats = self.geometry_embedding(geometry)
-        # Project the attention feats first to reduce memory and computation comsumptions.
-        # p_att_feats = self.ctx2att(att_feats)
-
-        return fc_feats, att_feats, obj2vec, rela2vec, geometry_feats, att_masks, rela_masks
-
     def _forward(self, fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, rela_n2r, geometry,
                  adj1, adj2, rela_masks, seq, att_masks):
 
@@ -210,7 +197,7 @@ class AttModel(CaptionModel):
             batch_size, seq.size(1) - 1, self.vocab_size+1)
 
         # Prepare the features
-        p_fc_feats, p_att_feats, p_obj2vec, p_rela2vec, p_geometry, p_att_masks, p_rela_masks = self._prepare_feature(
+        p_fc_feats, p_att_feats1, p_att_feats2, pp_att_feats1, p_obj2vec, p_rela2vec, p_geometry, p_att_masks, p_rela_masks = self._prepare_feature(
             fc_feats, att_feats, obj_label, rela_label, geometry, att_masks, rela_masks)
         # pp_att_feats is used for attention, we cache it in advance to reduce computation cost
         if self.use_gcn:
@@ -218,16 +205,16 @@ class AttModel(CaptionModel):
                 p_obj2vec, p_rela2vec, p_att_masks, p_rela_masks, adj1, adj2, rela_sub, rela_obj, rela_n2r)
 
             gcn_att_feats, gcn_geometry = self.v_gcnn(
-                p_att_feats, p_geometry, p_att_masks, p_rela_masks, adj1, adj2, rela_sub, rela_obj, rela_n2r)
+                p_att_feats2, p_geometry, p_att_masks, p_rela_masks, adj1, adj2, rela_sub, rela_obj, rela_n2r)
         else:
             gcn_obj2vec, gcn_rela2vec = p_obj2vec, p_rela2vec
-            gcn_att_feats, gcn_geometry = p_att_feats, p_geometry
+            gcn_att_feats, gcn_geometry = p_att_feats2, p_geometry
 
-        snode_feats = pack_wrapper(self.snode2att, gcn_obj2vec, p_att_masks)
-        vnode_feats = pack_wrapper(self.vnode2att, gcn_att_feats, p_att_masks)
+        snode_feats = self.snode2att(gcn_obj2vec)
+        vnode_feats = self.vnode2att(gcn_att_feats)
 
-        srela_feats = pack_wrapper(self.srela2att, gcn_rela2vec, p_rela_masks)
-        vrela_feats = pack_wrapper(self.vrela2att, gcn_geometry, p_rela_masks)
+        srela_feats = self.srela2att(gcn_rela2vec)
+        vrela_feats = self.vrela2att(gcn_geometry)
 
         for i in range(seq.size(1) - 1):
             if self.training and i >= 1 and self.ss_prob > 0.0:  # otherwiste no need to sample
@@ -252,17 +239,17 @@ class AttModel(CaptionModel):
                 break
 
             output, state = self.get_logprobs_state(
-                it, p_fc_feats, gcn_obj2vec, snode_feats, gcn_rela2vec, srela_feats,  gcn_att_feats, vnode_feats, gcn_geometry, vrela_feats, p_att_masks, p_rela_masks, state)
+                it, p_fc_feats, p_att_feats1, pp_att_feats1, gcn_obj2vec, snode_feats, gcn_rela2vec, srela_feats,  gcn_att_feats, vnode_feats, gcn_geometry, vrela_feats, p_att_masks, p_rela_masks, state)
             outputs[:, i] = output
 
         return outputs
 
-    def get_logprobs_state(self, it, fc_feats, gcn_obj2vec, snode_feats, gcn_rela2vec, srela_feats,  gcn_att_feats, vnode_feats, gcn_geometry, vrela_feats, att_masks, rela_masks, state):
+    def get_logprobs_state(self, it, fc_feats, att_feats, p_att_feats, gcn_obj2vec, snode_feats, gcn_rela2vec, srela_feats,  gcn_att_feats, vnode_feats, gcn_geometry, vrela_feats, att_masks, rela_masks, state):
         # 'it' contains a word index
         xt = self.embed(it)
 
         output, state = self.core(
-            xt, fc_feats, gcn_obj2vec, snode_feats, gcn_rela2vec, srela_feats,  gcn_att_feats, vnode_feats, gcn_geometry, vrela_feats, state, att_masks, rela_masks)
+            xt, fc_feats, att_feats, p_att_feats, gcn_obj2vec, snode_feats, gcn_rela2vec, srela_feats,  gcn_att_feats, vnode_feats, gcn_geometry, vrela_feats, state, att_masks, rela_masks)
         logprobs = F.log_softmax(self.logit(output), dim=1)
 
         return logprobs, state
@@ -272,7 +259,7 @@ class AttModel(CaptionModel):
         beam_size = opt.get('beam_size', 10)
         batch_size = fc_feats.size(0)
 
-        p_fc_feats, p_att_feats, p_obj2vec, p_rela2vec, p_geometry, p_att_masks, p_rela_masks = self._prepare_feature(
+        p_fc_feats, p_att_feats1, p_att_feats2, pp_att_feats, p_obj2vec, p_rela2vec, p_geometry, p_att_masks, p_rela_masks = self._prepare_feature(
             fc_feats, att_feats, obj_label, rela_label, geometry, att_masks, rela_masks)
 
         if self.use_gcn:
@@ -280,16 +267,16 @@ class AttModel(CaptionModel):
                 p_obj2vec, p_rela2vec, p_att_masks, p_rela_masks, adj1, adj2, rela_sub, rela_obj, rela_n2r)
 
             gcn_att_feats, gcn_geometry = self.v_gcnn(
-                p_att_feats, p_geometry, p_att_masks, p_rela_masks, adj1, adj2, rela_sub, rela_obj, rela_n2r)
+                p_att_feats2, p_geometry, p_att_masks, p_rela_masks, adj1, adj2, rela_sub, rela_obj, rela_n2r)
         else:
             gcn_obj2vec, gcn_rela2vec = p_obj2vec, p_rela2vec
-            gcn_att_feats, gcn_geometry = p_att_feats, p_geometry
+            gcn_att_feats, gcn_geometry = p_att_feats2, p_geometry
 
-        snode_feats = pack_wrapper(self.snode2att, gcn_obj2vec, p_att_masks)
-        vnode_feats = pack_wrapper(self.vnode2att, gcn_att_feats, p_att_masks)
+        snode_feats = self.snode2att(gcn_obj2vec)
+        vnode_feats = self.vnode2att(gcn_att_feats)
 
-        srela_feats = pack_wrapper(self.srela2att, gcn_rela2vec, p_rela_masks)
-        vrela_feats = pack_wrapper(self.vrela2att, gcn_geometry, p_rela_masks)
+        srela_feats = self.srela2att(gcn_rela2vec)
+        vrela_feats = self.vrela2att(gcn_geometry)
 
         assert beam_size <= self.vocab_size + \
             1, 'lets assume this for now, otherwise this corner case causes a few headaches down the road. can be dealt with in future if needed'
@@ -302,7 +289,11 @@ class AttModel(CaptionModel):
             state = self.init_hidden(beam_size)
             tmp_fc_feats = p_fc_feats[k:k +
                                       1].expand(beam_size, p_fc_feats.size(1))
-          
+            tmp_att_feats = p_att_feats1[k:k+1].expand(
+                *((beam_size,)+p_att_feats1.size()[1:])).contiguous()
+
+            tmp_pp_att_feats = pp_att_feats[k:k+1].expand(
+                *((beam_size,)+pp_att_feats.size()[1:])).contiguous()
             tmp_gcn_obj2vec = gcn_obj2vec[k:k+1].expand(
                 *((beam_size,)+gcn_obj2vec.size()[1:])).contiguous()
             tmp_snode_feats = snode_feats[k:k+1].expand(
@@ -333,10 +324,10 @@ class AttModel(CaptionModel):
                     it = fc_feats.new_zeros([beam_size], dtype=torch.long)
 
                 logprobs, state = self.get_logprobs_state(
-                    it, tmp_fc_feats, tmp_gcn_obj2vec, tmp_snode_feats, tmp_gcn_rela2vec, tmp_srela_feats,  tmp_gcn_att_feats, tmp_vnode_feats, tmp_gcn_geometry, tmp_vrela_feats, tmp_att_masks, tmp_rela_masks, state)
+                    it, tmp_fc_feats, tmp_att_feats, tmp_pp_att_feats, tmp_gcn_obj2vec, tmp_snode_feats, tmp_gcn_rela2vec, tmp_srela_feats,  tmp_gcn_att_feats, tmp_vnode_feats, tmp_gcn_geometry, tmp_vrela_feats, tmp_att_masks, tmp_rela_masks, state)
 
             self.done_beams[k] = self.beam_search(
-                state, logprobs, tmp_fc_feats, tmp_gcn_obj2vec, tmp_snode_feats, tmp_gcn_rela2vec, tmp_srela_feats,  tmp_gcn_att_feats, tmp_vnode_feats, tmp_gcn_geometry, tmp_vrela_feats, tmp_att_masks, tmp_rela_masks, opt=opt)
+                state, logprobs, tmp_fc_feats, tmp_att_feats, tmp_pp_att_feats, tmp_gcn_obj2vec, tmp_snode_feats, tmp_gcn_rela2vec, tmp_srela_feats,  tmp_gcn_att_feats, tmp_vnode_feats, tmp_gcn_geometry, tmp_vrela_feats, tmp_att_masks, tmp_rela_masks, opt=opt)
             # the first beam has highest cumulative score
             seq[:, k] = self.done_beams[k][0]['seq']
             seqLogprobs[:, k] = self.done_beams[k][0]['logps']
@@ -359,7 +350,7 @@ class AttModel(CaptionModel):
         batch_size = fc_feats.size(0)
         state = self.init_hidden(batch_size)
 
-        p_fc_feats, p_att_feats, p_obj2vec, p_rela2vec, p_geometry, p_att_masks, p_rela_masks = self._prepare_feature(
+        p_fc_feats, p_att_feats1, p_att_feats2, pp_att_feats, p_obj2vec, p_rela2vec, p_geometry, p_att_masks, p_rela_masks = self._prepare_feature(
             fc_feats, att_feats, obj_label, rela_label, geometry, att_masks, rela_masks)
 
         if self.use_gcn:
@@ -367,16 +358,16 @@ class AttModel(CaptionModel):
                 p_obj2vec, p_rela2vec, p_att_masks, p_rela_masks, adj1, adj2, rela_sub, rela_obj, rela_n2r)
 
             gcn_att_feats, gcn_geometry = self.v_gcnn(
-                p_att_feats, p_geometry, p_att_masks, p_rela_masks, adj1, adj2, rela_sub, rela_obj, rela_n2r)
+                p_att_feats2, p_geometry, p_att_masks, p_rela_masks, adj1, adj2, rela_sub, rela_obj, rela_n2r)
         else:
             gcn_obj2vec, gcn_rela2vec = p_obj2vec, p_rela2vec
-            gcn_att_feats, gcn_geometry = p_att_feats, p_geometry
+            gcn_att_feats, gcn_geometry = p_att_feats2, p_geometry
 
-        snode_feats = pack_wrapper(self.snode2att, gcn_obj2vec, p_att_masks)
-        vnode_feats = pack_wrapper(self.vnode2att, gcn_att_feats, p_att_masks)
+        snode_feats = self.snode2att(gcn_obj2vec)
+        vnode_feats = self.vnode2att(gcn_att_feats)
 
-        srela_feats = pack_wrapper(self.srela2att, gcn_rela2vec, p_rela_masks)
-        vrela_feats = pack_wrapper(self.vrela2att, gcn_geometry, p_rela_masks)
+        srela_feats = self.srela2att(gcn_rela2vec)
+        vrela_feats = self.vrela2att(gcn_geometry)
 
         trigrams = []  # will be a list of batch_size dictionaries
 
@@ -388,7 +379,7 @@ class AttModel(CaptionModel):
                 it = fc_feats.new_zeros(batch_size, dtype=torch.long)
 
             logprobs, state = self.get_logprobs_state(
-                it, p_fc_feats, gcn_obj2vec, snode_feats, gcn_rela2vec, srela_feats,  gcn_att_feats, vnode_feats, gcn_geometry, vrela_feats, p_att_masks, p_rela_masks, state)
+                it, p_fc_feats, p_att_feats1, pp_att_feats, gcn_obj2vec, snode_feats, gcn_rela2vec, srela_feats,  gcn_att_feats, vnode_feats, gcn_geometry, vrela_feats, p_att_masks, p_rela_masks, state)
 
             if decoding_constraint and t > 0:
                 tmp = logprobs.new_zeros(logprobs.size())
@@ -480,9 +471,6 @@ class GRCNN(nn.Module):
         self.node2node_transform[0].append(
             nn.Linear(self.node_dim, self.node_dim)
         )
-        self.node2node_transform[0].append(
-            nn.Linear(self.node_dim, self.node_dim)
-        )
 
         self.node2node_transform[1].append(
             nn.Linear(self.node_dim, self.node_dim)
@@ -512,9 +500,9 @@ class GRCNN(nn.Module):
         # mask1 = torch.gt(num1, 0).float().cuda()
         # neighbors1_feat = torch.tensor([1.]).cuda()/(num1+1e-8)*mask1*self.node_transform[0](torch.bmm(adj1, node))
         # I11 = torch.eye(adj1.shape[1]).unsqueeze(0).expand_as(adj1)
-        #adj11_hat = adj1  # +I11.cuda()
+        # adj11_hat = adj1  # +I11.cuda()
         #D11 = torch.diag_embed(torch.sum(adj11_hat, dim=2))
-       
+
         # neighbors11_feat = pack_wrapper(
         #     self.node2node_transform[0][0], torch.bmm(torch.bmm(self.inv(D11), adj11_hat), node), p_att_masks)
         neighbors11_feat = pack_wrapper(
@@ -526,14 +514,14 @@ class GRCNN(nn.Module):
         # neighbors12_feat = pack_wrapper(
         #     self.node2node_transform[0][1], torch.bmm(
         #         torch.bmm(self.inv(D12), adj12_hat), node), p_att_masks)
-        neighbors12_feat = pack_wrapper(
-            self.node2node_transform[0][1], torch.bmm(adj2, node), p_att_masks)
+        # neighbors12_feat = pack_wrapper(
+        #     self.node2node_transform[0][1], torch.bmm(adj2, node), p_att_masks)
 
         node2rela_feat1 = pack_wrapper(
             self.node2rela_transform[0][0], torch.bmm(rela_n2r, rela), p_att_masks)
 
-        node_step1 = F.dropout(F.relu(node + neighbors11_feat +
-                                      neighbors12_feat + node2rela_feat1), p=self.p)
+        node_step1 = F.dropout(
+            F.relu(node + neighbors11_feat + node2rela_feat1), p=self.p)
 
         rela_sub_feat1 = pack_wrapper(
             self.rela_transform[0][0], torch.bmm(rela_sub, node), p_rela_masks)
@@ -552,7 +540,7 @@ class GRCNN(nn.Module):
         # neighbors21_feat = pack_wrapper(
         #     self.node2node_transform[1][0], torch.bmm(torch.bmm(self.inv(D21), adj21_hat), node_step1), p_att_masks)
         neighbors21_feat = pack_wrapper(
-             self.node2node_transform[1][0], torch.bmm(adj1, node_step1), p_att_masks)
+            self.node2node_transform[1][0], torch.bmm(adj1, node_step1), p_att_masks)
 
         node2rela_feat2 = pack_wrapper(
             self.node2rela_transform[1][0], torch.bmm(rela_n2r, rela_step1), p_att_masks)
@@ -619,17 +607,34 @@ class MNGrcnnCore(nn.Module):
     def __init__(self, opt, use_maxout=False):
         super(MNGrcnnCore, self).__init__()
         self.drop_prob_lm = opt.drop_prob_lm
+        self.d_model = opt.rnn_size
+        self.use_multi_head = opt.use_multi_head
+        self.multi_head_scale = opt.multi_head_scale
+        self.use_ctx_drop = getattr(opt, 'ctx_drop', 0)
+        self.out_res = getattr(opt, 'out_res', 0)
+        #self.decoder_type = getattr(opt, 'decoder_type', 'AoA')
+
+        if opt.use_multi_head == 2:
+            self.attention2 = MultiHeadedDotAttention(
+                opt.num_heads, opt.rnn_size, project_k_v=0, scale=opt.multi_head_scale, use_output_layer=0, do_aoa=0, norm_q=1)
+        else:
+            #
+            self.attention2 = Attention(opt)
 
         self.att_lstm = nn.LSTMCell(
-            opt.input_encoding_size*2 + opt.rnn_size, opt.rnn_size)  # we, fc, h^2_t-1
-        self.lang_lstm = nn.LSTMCell(
+            opt.input_encoding_size*2 + opt.rnn_size*2, opt.rnn_size)  # we, fc, h^2_t-1
+
+        self.gcn_lstm = nn.LSTMCell(
             opt.rnn_size + opt.input_encoding_size*4, opt.rnn_size)  # h^1_t, \hat v 1024, \hat rela 1024
+
+        self.lang_lstm = nn.LSTMCell(
+            opt.rnn_size*2 + opt.input_encoding_size, opt.rnn_size)  # h^1_t, \hat v 1024, \hat rela 1024
         self.attention = GateAttention(opt)
         # self.init_weight()
 
-    def forward(self, xt, fc_feats, gcn_obj2vec, snode_feats, gcn_rela2vec, srela_feats,  gcn_att_feats, vnode_feats, gcn_geometry, vrela_feats, state, att_masks=None, rela_masks=None):
-        prev_h = state[0][-1]
-        att_lstm_input = torch.cat([prev_h, fc_feats, xt], 1)
+    def forward(self, xt, fc_feats, att_feats, p_att_feats, gcn_obj2vec, snode_feats, gcn_rela2vec, srela_feats,  gcn_att_feats, vnode_feats, gcn_geometry, vrela_feats, state, att_masks=None, rela_masks=None):
+        prev_h1, prev_h2 = state[0][1], state[0][2]
+        att_lstm_input = torch.cat([prev_h1, prev_h2, fc_feats, xt], 1)
 
         h_att, c_att = self.att_lstm(
             att_lstm_input, (state[0][0], state[1][0]))
@@ -638,14 +643,26 @@ class MNGrcnnCore(nn.Module):
         satt, vatt, srela, vrela = self.attention(
             h_att, gcn_obj2vec, snode_feats, gcn_rela2vec, srela_feats,  gcn_att_feats, vnode_feats, gcn_geometry, vrela_feats, att_masks, rela_masks)
 
-        lang_lstm_input = torch.cat([satt, vatt, srela, vrela, h_att], 1)
+        gcn_lstm_input = torch.cat([satt, vatt, srela, vrela, h_att], 1)
         # lang_lstm_input = torch.cat([att, F.dropout(h_att, self.drop_prob_lm, self.training)], 1) ?????
 
+        h_gcn, c_gcn = self.gcn_lstm(
+            gcn_lstm_input, (state[0][1], state[1][1]))
+
+        if self.use_multi_head == 2:
+            att = self.attention2(h_att, p_att_feats.narrow(2, 0, self.multi_head_scale * self.d_model), p_att_feats.narrow(
+                2, self.multi_head_scale * self.d_model, self.multi_head_scale * self.d_model), att_masks)
+        else:
+            att = self.attention2(h_gcn, att_feats, p_att_feats, att_masks)
+
+        ctx_input = torch.cat([att, h_att, h_gcn], 1)
+
         h_lang, c_lang = self.lang_lstm(
-            lang_lstm_input, (state[0][1], state[1][1]))
+            ctx_input, (state[0][2], state[1][2]))
 
         output = F.dropout(h_lang, self.drop_prob_lm, self.training)
-        state = (torch.stack([h_att, h_lang]), torch.stack([c_att, c_lang]))
+        state = (torch.stack([h_att, h_gcn, h_lang]),
+                 torch.stack([c_att, c_gcn, c_lang]))
 
         return output, state
 
@@ -668,6 +685,170 @@ class MNGrcnnCore(nn.Module):
 class MNGrcnn(AttModel):
     def __init__(self, opt):
         super(MNGrcnn, self).__init__(opt)
-        self.num_layers = 2
+        self.num_layers = 3
         self.use_gcn = opt.use_gcn
+
+        self.use_mean_feats = getattr(opt, 'mean_feats', 1)
+
+        if opt.use_multi_head == 2:
+            del self.ctx2att
+            self.ctx2att = nn.Linear(
+                opt.rnn_size, 2 * opt.multi_head_scale * opt.rnn_size)
+
+        if opt.refine:
+            self.refiner = AoA_Refiner_Core(opt)
+        else:
+            self.refiner = lambda x, y: x
+        # self.core = AoA_Decoder_Core(opt)
+
         self.core = MNGrcnnCore(opt)
+
+    def _prepare_feature(self, fc_feats, att_feats, obj_label, rela_label, geometry, att_masks, rela_masks):
+        att_feats, att_masks = self.clip_att(att_feats, att_masks)
+        obj_label, att_masks = self.clip_att(obj_label, att_masks)
+
+        rela_label, rela_masks = self.clip_att(rela_label, rela_masks)
+        geometry, rela_masks = self.clip_att(geometry, rela_masks)
+        # embed fc and att feats
+        if self.use_mean_feats:
+            mean_feats = self.fc_embed(fc_feats)
+
+        # wrapper后，通过embed该为0的 行 还是0
+        # 1给LSTM3用，2给GCN用
+        att_feats1 = pack_wrapper(self.att_embed1, att_feats, att_masks)
+        att_feats1 = self.refiner(att_feats1, att_masks)
+        att_feats2 = pack_wrapper(self.att_embed2, att_feats, att_masks)
+
+        obj2vec = pack_wrapper(self.obj_embedding, obj_label, att_masks)
+        # obj2vec = self.obj_embedding(obj_label)
+
+        rela2vec = pack_wrapper(self.rela_embedding, rela_label, rela_masks)
+        # rela2vec = self.rela_embedding(rela_label)
+
+        geometry_feats = pack_wrapper(
+            self.geometry_embedding, geometry, rela_masks)
+        # geometry_feats = self.geometry_embedding(geometry)
+        # Project the attention feats first to reduce memory and computation comsumptions.
+        p_att_feats1 = self.ctx2att(att_feats1)
+
+        return mean_feats, att_feats1, att_feats2, p_att_feats1, obj2vec, rela2vec, geometry_feats, att_masks, rela_masks
+
+
+class MultiHeadedDotAttention(nn.Module):
+    def __init__(self, h, d_model, dropout=0.1, scale=1, project_k_v=1, use_output_layer=1, do_aoa=0, norm_q=0, dropout_aoa=0.3):
+        super(MultiHeadedDotAttention, self).__init__()
+        assert d_model * scale % h == 0
+        # We assume d_v always equals d_k
+        self.d_k = d_model * scale // h
+        self.h = h
+
+        # Do we need to do linear projections on K and V?
+        self.project_k_v = project_k_v
+
+        # normalize the query?
+        if norm_q:
+            self.norm = LayerNorm(d_model)
+        else:
+            self.norm = lambda x: x
+        self.linears = clones(
+            nn.Linear(d_model, d_model * scale), 1 + 2 * project_k_v)
+
+        # output linear layer after the multi-head attention?
+        self.output_layer = nn.Linear(d_model * scale, d_model)
+
+        # apply aoa after attention?
+        self.use_aoa = do_aoa
+        if self.use_aoa:
+            self.aoa_layer = nn.Sequential(
+                nn.Linear((1 + scale) * d_model, 2 * d_model), nn.GLU())
+            # dropout to the input of AoA layer
+            if dropout_aoa > 0:
+                self.dropout_aoa = nn.Dropout(p=dropout_aoa)
+            else:
+                self.dropout_aoa = lambda x: x
+
+        if self.use_aoa or not use_output_layer:
+            # AoA doesn't need the output linear layer
+            del self.output_layer
+            self.output_layer = lambda x: x
+
+        self.attn = None
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, query, value, key, mask=None):
+        if mask is not None:
+            if len(mask.size()) == 2:
+                mask = mask.unsqueeze(-2)
+            # Same mask applied to all h heads.
+            mask = mask.unsqueeze(1)
+
+        single_query = 0
+        if len(query.size()) == 2:
+            single_query = 1
+            query = query.unsqueeze(1)
+
+        nbatches = query.size(0)
+
+        query = self.norm(query)
+
+        # Do all the linear projections in batch from d_model => h x d_k
+        if self.project_k_v == 0:
+            query_ = self.linears[0](query).view(
+                nbatches, -1, self.h, self.d_k).transpose(1, 2)
+            key_ = key.view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
+            value_ = value.view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
+        else:
+            query_, key_, value_ = \
+                [l(x).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
+                 for l, x in zip(self.linears, (query, key, value))]
+
+        # Apply attention on all the projected vectors in batch.
+        x, self.attn = attention(query_, key_, value_, mask=mask,
+                                 dropout=self.dropout)
+
+        # "Concat" using a view
+        x = x.transpose(1, 2).contiguous() \
+             .view(nbatches, -1, self.h * self.d_k)
+
+        if self.use_aoa:
+            # Apply AoA
+            x = self.aoa_layer(self.dropout_aoa(torch.cat([x, query], -1)))
+        x = self.output_layer(x)
+
+        if single_query:
+            query = query.squeeze(1)
+            x = x.squeeze(1)
+        return x
+
+
+class AoA_Refiner_Layer(nn.Module):
+    def __init__(self, size, self_attn, feed_forward, dropout):
+        super(AoA_Refiner_Layer, self).__init__()
+        self.self_attn = self_attn
+        self.feed_forward = feed_forward
+        self.use_ff = 0
+        if self.feed_forward is not None:
+            self.use_ff = 1
+        self.sublayer = clones(SublayerConnection(
+            size, dropout), 1+self.use_ff)
+        self.size = size
+
+    def forward(self, x, mask):
+        x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))
+        return self.sublayer[-1](x, self.feed_forward) if self.use_ff else x
+
+
+class AoA_Refiner_Core(nn.Module):
+    def __init__(self, opt):
+        super(AoA_Refiner_Core, self).__init__()
+        attn = MultiHeadedDotAttention(opt.num_heads, opt.rnn_size, project_k_v=1, scale=opt.multi_head_scale,
+                                       do_aoa=opt.refine_aoa, norm_q=0, dropout_aoa=getattr(opt, 'dropout_aoa', 0.3))
+        layer = AoA_Refiner_Layer(opt.rnn_size, attn, PositionwiseFeedForward(
+            opt.rnn_size, 2048, 0.1) if opt.use_ff else None, 0.1)
+        self.layers = clones(layer, 6)
+        self.norm = LayerNorm(layer.size)
+
+    def forward(self, x, mask):
+        for layer in self.layers:
+            x = layer(x, mask)
+        return self.norm(x)

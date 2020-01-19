@@ -52,6 +52,8 @@ def if_use_feat(caption_model):
         use_fc, use_att = True, True
     elif caption_model == 'mngrcnn':
         use_fc, use_att = True, True
+    elif caption_model == 'mngrcnn2':
+        use_fc, use_att = True, True
     else:
         use_att, use_fc = True, False
     return use_fc, use_att

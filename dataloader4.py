@@ -11,6 +11,8 @@ import random
 
 import torch
 import torch.utils.data as data
+
+import multiprocessing
 import six
 
 
@@ -97,11 +99,11 @@ class DataLoader(data.Dataset):
             print('vocab size is ', self.vocab_size)
 
         # open the hdf5 file
-        # print('DataLoader loading h5 file: ', opt.input_fc_dir,
-        #       opt.input_att_dir, opt.input_box_dir, opt.input_label_h5)
+        print('DataLoader loading h5 file: ', opt.input_fc_dir,
+              opt.input_att_dir, opt.input_box_dir, opt.input_label_h5)
         if self.opt.input_label_h5 != 'none':
             self.h5_label_file = h5py.File(
-                self.opt.input_label_h5, 'r')
+                self.opt.input_label_h5, 'r', driver='core')
             # load in the sequence data
             seq_size = self.h5_label_file['labels'].shape
             self.label = self.h5_label_file['labels'][:]
@@ -125,7 +127,7 @@ class DataLoader(data.Dataset):
         self.split_ix = {'train': [], 'val': [], 'test': []}
         for ix in range(len(self.info['images'])):
             img = self.info['images'][ix]
-            if 'split' not in img:
+            if not 'split' in img:
                 self.split_ix['train'].append(ix)
                 self.split_ix['val'].append(ix)
                 self.split_ix['test'].append(ix)
@@ -149,7 +151,7 @@ class DataLoader(data.Dataset):
         for split in self.iterators.keys():
             self._prefetch_process[split] = BlobFetcher(
                 split, self, split == 'train')
-        #Terminate the child process when the parent exists
+            # Terminate the child process when the parent exists
 
         def cleanup():
             print('Terminating BlobFetcher')
@@ -250,7 +252,7 @@ class DataLoader(data.Dataset):
             data['att_masks'] = None
 
         data['labels'] = np.vstack(label_batch)
-        # generate mask, 包括开头和结束标志和正文，不包括补位的0
+        # generate mask
         nonzeros = np.array(
             list(map(lambda x: (x != 0).sum()+2, data['labels'])))
         mask_batch = np.zeros(

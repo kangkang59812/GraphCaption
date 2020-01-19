@@ -63,7 +63,7 @@ $ bash scripts/copy_model.sh fc fc_rl
 
 Then
 ```bash
-$ python train.py --id fc_rl --caption_model fc --input_json data/cocotalk.json --input_fc_dir data/cocotalk_fc --input_att_dir data/cocotalk_att --input_label_h5 data/cocotalk_label.h5 --batch_size 10 --learning_rate 5e-5 --start_from log_fc_rl --checkpoint_path log_fc_rl --save_checkpoint_every 6000 --language_eval 1 --val_images_use 5000 --self_critical_after 30 --cached_tokens coco-train-idxs
+$ python train3.py --id fc_rl --start_from save_rl --checkpoint_path save_rl --self_critical_after 30 --cached_tokens coco-train-idxs
 ```
 
 You will see a huge boost on Cider score, : ).
@@ -86,7 +86,7 @@ This tells the `eval` script to run up to 10 images from the given folder. If yo
 
 ```bash
 $ cd vis
-$ python -m SimpleHTTPServer
+$ python -m http.server 端口号
 ```
 
 Now visit `localhost:8000` in your browser and you should see your predicted captions.

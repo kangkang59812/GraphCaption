@@ -45,14 +45,17 @@ def get_cwh(box):
 
 boxInfo = pickle.load(open('data/vsua_box_info.pkl', 'rb'), encoding='latin1')
 dirr = '/home/lkk/code/self-critical.pytorch/data/coco_img_sg'
+bdirr = '/home/lkk/code/self-critical.pytorch/data/cocobu_box'
 names = os.listdir(dirr)
 NumFeats = 8
 for name in tqdm(names):
     path = os.path.join(dirr, name)
+    bpath = os.path.join(bdirr, name)
     data = np.load(path, encoding='latin1').item()
+    boxex = np.load(bpath)
     index = data['rela_matrix'].astype(np.int)[:, 0:2]
     num_rela = index.shape[0]
-    boxex = boxInfo[int(name.split('.')[0])]['boxes']
+    # boxex = boxInfo[int(name.split('.')[0])]['boxes']
     h = boxInfo[int(name.split('.')[0])]['image_h']
     w = boxInfo[int(name.split('.')[0])]['image_w']
     scale = w * h
@@ -60,10 +63,8 @@ for name in tqdm(names):
     feats = np.zeros([num_rela, NumFeats], dtype='float')
 
     for i, pair in enumerate(index):
-        if name == '425742.npy':
-            box1, box2 = yichang[pair[0]], yichang[pair[1]]
-        else:
-            box1, box2 = boxex[pair[0]], boxex[pair[1]]
+
+        box1, box2 = boxex[pair[0]], boxex[pair[1]]
 
         cx1, cy1, w1, h1 = get_cwh(box1)
         cx2, cy2, w2, h2 = get_cwh(box2)
@@ -105,4 +106,4 @@ for name in tqdm(names):
 
     save_name = os.path.join(
         '/home/lkk/code/self-critical.pytorch/data/cocobu_geometry', name.split('.')[0])
-    np.savez(save_name, feats=feats)
+    np.savez(save_name, feats=feats, image_h=h, image_w=w)

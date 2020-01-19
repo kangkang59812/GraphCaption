@@ -16,7 +16,8 @@ from .AttModel import *
 from .TransformerModel import TransformerModel
 from .VSUAModel import VSUAModel
 from .MNGrcnn import MNGrcnn
-
+from .AoAModel import AoAModel
+from .MNGrcnn2 import MNGrcnn as MNGrcnn2
 
 def setup(opt):
     if opt.caption_model == 'fc':
@@ -59,7 +60,10 @@ def setup(opt):
 
     elif opt.caption_model == 'mngrcnn':
         model = MNGrcnn(opt)
-
+    elif opt.caption_model == 'mngrcnn2':
+        model = MNGrcnn2(opt)
+    elif opt.caption_model == 'aoa':
+        model = AoAModel(opt)
     else:
         raise Exception(
             "Caption model not supported: {}".format(opt.caption_model))

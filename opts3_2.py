@@ -34,7 +34,7 @@ def parse_opt():
                         help='Cached token file for calculating cider score during self critical training.')
 
     # Model settings
-    parser.add_argument('--caption_model', type=str, default="mngrcnn",
+    parser.add_argument('--caption_model', type=str, default="mngrcnn2",
                         help='mngrcnn, show_tell, show_attend_tell, all_img, fc, att2in, att2in2, att2all2, adaatt, adaattmo, topdown, stackatt, denseatt, transformer')
     parser.add_argument('--rnn_size', type=int, default=1024,
                         help='size of the rnn in number of hidden nodes in each layer')
@@ -58,13 +58,12 @@ def parse_opt():
                         help='几何关系维度')
     parser.add_argument('--logit_layers', type=int, default=1,
                         help='number of layers in the RNN')
-    parser.add_argument('--use_gcn', type=bool, default=False,
+    parser.add_argument('--use_gcn', type=bool, default=True,
                         help='use gcn')
     parser.add_argument('--use_bn', type=int, default=0,
                         help='If 1, then do batch_normalization first in att_embed, if 2 then do bn both in the beginning and the end of att_embed')
     parser.add_argument('--acc_steps', type=int, default=1,
                         help='accumulation steps')
-
     # AoA
     parser.add_argument('--mean_feats', type=int, default=1,
                         help='use mean pooling of feats?')
@@ -98,7 +97,7 @@ def parse_opt():
     # Optimization: General
     parser.add_argument('--max_epochs', type=int, default=50,
                         help='number of epochs')
-    parser.add_argument('--batch_size', type=int, default=64,
+    parser.add_argument('--batch_size', type=int, default=20,
                         help='minibatch size')
     parser.add_argument('--num_worker', type=int, default=0,
                         help='num_worker of dataloader')
@@ -156,7 +155,7 @@ def parse_opt():
     parser.add_argument('--reduce_on_plateau', action='store_true',
                         help='')
 
-    parser.add_argument('--scheduled_sampling_start', type=int, default=-1,
+    parser.add_argument('--scheduled_sampling_start', type=int, default=0,
                         help='at what iteration to start decay gt probability')
     parser.add_argument('--scheduled_sampling_increase_every', type=int, default=5,
                         help='every how many iterations thereafter to gt probability')
@@ -166,7 +165,7 @@ def parse_opt():
                         help='Maximum scheduled sampling prob.')
 
     # Evaluation/Checkpointing
-    parser.add_argument('--val_images_use', type=int, default=-1,
+    parser.add_argument('--val_images_use', type=int, default=5000,
                         help='how many images to use when periodically evaluating the validation loss? (-1 = all)')
     parser.add_argument('--save_checkpoint_every', type=int, default=2000,
                         help='how often to save a model checkpoint (in iterations)?')

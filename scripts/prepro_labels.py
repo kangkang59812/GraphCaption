@@ -39,7 +39,10 @@ import torch
 import torchvision.models as models
 import skimage.io
 from PIL import Image
-
+from tqdm import tqdm
+exclude = [481399, 110026, 317035, 563175, 516124, 317431, 510418, 514772, 88173, 84548, 224733,
+           37157, 447337, 496065, 515062, 560360, 163361, 83730, 76138, 423141, 406531, 46422, 295626,
+           43347, 322211, 222990, 350067, 391689, 180515, 504382, 156002, 453348, 90365, 119718]
 
 def build_vocab(imgs, params):
     count_thr = params['word_count_threshold']
@@ -154,29 +157,29 @@ def main(params):
     seed(123)  # make reproducible
 
     # create the vocab
-    vocab = build_vocab(imgs, params)
-    # a 1-indexed vocab translation table
-    itow = {i+1: w for i, w in enumerate(vocab)}
-    wtoi = {w: i+1 for i, w in enumerate(vocab)}  # inverse table
+    # vocab = build_vocab(imgs, params)
+    # # a 1-indexed vocab translation table
+    # itow = {i+1: w for i, w in enumerate(vocab)}
+    # wtoi = {w: i+1 for i, w in enumerate(vocab)}  # inverse table
 
-    # encode captions in large arrays, ready to ship to hdf5 file
-    L, label_start_ix, label_end_ix, label_length = encode_captions(
-        imgs, params, wtoi)
+    # # encode captions in large arrays, ready to ship to hdf5 file
+    # L, label_start_ix, label_end_ix, label_length = encode_captions(
+    #     imgs, params, wtoi)
 
-    # create output h5 file
-    N = len(imgs)
-    f_lb = h5py.File(params['output_h5']+'_label.h5', "w")
-    f_lb.create_dataset("labels", dtype='uint32', data=L)
-    f_lb.create_dataset("label_start_ix", dtype='uint32', data=label_start_ix)
-    f_lb.create_dataset("label_end_ix", dtype='uint32', data=label_end_ix)
-    f_lb.create_dataset("label_length", dtype='uint32', data=label_length)
-    f_lb.close()
+    # # create output h5 file
+    # N = len(imgs)
+    # f_lb = h5py.File(params['output_h5']+'_label.h5', "w")
+    # f_lb.create_dataset("labels", dtype='uint32', data=L)
+    # f_lb.create_dataset("label_start_ix", dtype='uint32', data=label_start_ix)
+    # f_lb.create_dataset("label_end_ix", dtype='uint32', data=label_end_ix)
+    # f_lb.create_dataset("label_length", dtype='uint32', data=label_length)
+    # f_lb.close()
 
     # create output json file
     out = {}
-    out['ix_to_word'] = itow  # encode the (1-indexed) vocab
+    # out['ix_to_word'] = itow  # encode the (1-indexed) vocab
     out['images'] = []
-    for i, img in enumerate(imgs):
+    for i, img in tqdm(enumerate(imgs)):
 
         jimg = {}
         jimg['split'] = img['split']
@@ -186,17 +189,19 @@ def main(params):
         if 'cocoid' in img:
             # copy over & mantain an id, if present (e.g. coco ids, useful)
             jimg['id'] = img['cocoid']
+            if img['cocoid'] in exclude:
+                print(img['cocoid'])
         elif 'imgid' in img:
             jimg['id'] = img['imgid']
-
+            print(img['imgid'])
         if params['images_root'] != '':
             with Image.open(os.path.join(params['images_root'], img['filepath'], img['filename'])) as _img:
                 jimg['width'], jimg['height'] = _img.size
 
         out['images'].append(jimg)
 
-    json.dump(out, open(params['output_json'], 'w'))
-    print('wrote ', params['output_json'])
+    # json.dump(out, open(params['output_json'], 'w'))
+    # print('wrote ', params['output_json'])
 
 
 if __name__ == "__main__":

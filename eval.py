@@ -21,11 +21,11 @@ import torch
 # Input arguments and options
 parser = argparse.ArgumentParser()
 # Input paths
-parser.add_argument('--model', type=str, default='/home/lkk/code/self-critical.pytorch/save/model-best.pth',
+parser.add_argument('--model', type=str, default='/home/lkk/code/self-critical.pytorch/log/log_gcn_rl/model-best.pth',
                     help='path to model to evaluate')
 parser.add_argument('--cnn_model', type=str,  default='resnet101',
                     help='resnet101, resnet152')
-parser.add_argument('--infos_path', type=str, default='/home/lkk/code/self-critical.pytorch/save/infos_fc-best.pkl',
+parser.add_argument('--infos_path', type=str, default='/home/lkk/code/self-critical.pytorch/log/log_gcn_rl/infos_gcn-best.pkl',
                     help='path to infos to evaluate')
 opts.add_eval_options(parser)
 
@@ -83,4 +83,4 @@ if lang_stats:
 
 if opt.dump_json == 1:
     # dump the json
-    json.dump(split_predictions, open('vis/vis.json', 'w'))
+    json.dump(split_predictions, open('vis/vis3.json', 'w'))

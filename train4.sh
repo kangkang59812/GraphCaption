@@ -1,4 +1,4 @@
-id="aoanet"
+id="aoanet2"
 if [ ! -f log/log_$id/infos_$id.pkl ]; then
 start_from=""
 else
@@ -39,8 +39,9 @@ python train4.py --id $id \
     --max_epochs 25 \
     --scheduled_sampling_increase_every 5 \
     --scheduled_sampling_max_prob 0.5 \
-    --learning_rate_decay_every 3
-
+    --learning_rate_decay_every 3 \
+    --save_history_ckpt 1
+    
 python train4.py --id $id \
     --caption_model aoa \
     --refine 1 \

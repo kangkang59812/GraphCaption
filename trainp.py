@@ -13,16 +13,16 @@ import os
 from six.moves import cPickle
 import traceback
 
-import opts3 as opts
+import optsp as opts
 import models
-from dataloader3 import *
+from dataloaderp import *
 import skimage.io
-import eval_utils as eval_utils
+import eval_utilsp as eval_utils
 import misc.utils as utils
 from misc.rewards import init_scorer, get_self_critical_reward
-from misc.loss_wrapper import LossWrapper
+from misc.loss_wrapperp import LossWrapper
 import time
-
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 try:
     import tensorboardX as tb
 except ImportError:
@@ -37,11 +37,10 @@ def add_summary_value(writer, key, value, iteration):
 
 def train(opt):
     # Deal with feature things before anything
-    opt.use_fc, opt.use_att = utils.if_use_feat(opt.caption_model)
 
     acc_steps = getattr(opt, 'acc_steps', 1)
 
-    loader = DataLoader(opt)
+    loader = DataLoaderRaw(opt)
     opt.vocab_size = loader.vocab_size
     opt.seq_length = loader.seq_length
 
@@ -85,8 +84,10 @@ def train(opt):
         best_val_score = infos.get('best_val_score', None)
 
     opt.vocab = loader.get_vocab()
-    dp_model = models.setup(opt).cuda()
-    model = dp_model
+    dp_model = models.setup(opt)
+
+    model = dp_model.cuda()
+
     del opt.vocab
     dp_lw_model = LossWrapper(dp_model, opt)
     lw_model = dp_lw_model
@@ -175,15 +176,11 @@ def train(opt):
 
             torch.cuda.synchronize()
             start = time.time()
-            tmp = [data['fc_feats'], data['att_feats'], data['obj_label'], data['rela_label'], data['rela_sub'], data['rela_obj'],  data['rela_n2r'], data['geometry'],
-                   data['adj1'], data['adj2'], data['labels'], data['masks'], data['att_masks'],
-                   data['rela_masks']]
+            tmp = [data['attr'], data['img'], data['labels'], data['masks']]
             tmp = [_ if _ is None else _.cuda() for _ in tmp]
-            fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, rela_n2r, geometry,\
-                adj1, adj2, labels, masks, att_masks, rela_masks = tmp
+            attrs, imgs, labels, masks = tmp
 
-            model_out = dp_lw_model(fc_feats, att_feats, obj_label, rela_label, rela_sub, rela_obj, rela_n2r, geometry,
-                                    adj1, adj2, labels, masks, att_masks, rela_masks,
+            model_out = dp_lw_model(attrs, imgs, labels, masks,
                                     data['gts'], torch.arange(0, len(data['gts'])), sc_flag)
 
             loss = model_out['loss'].mean()

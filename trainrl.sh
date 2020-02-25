@@ -1,16 +1,16 @@
 #!/bin/sh
-id="mul-gcn1-19"
+id="nogcn1-21"
 if [ ! -f log/log_$id/infos_$id.pkl ]; then
 start_from=""
 else
 start_from="--start_from log/log_$id"
 fi
 python train3.py --id $id \
-    --use_gcn True \
-    --learning_rate 2e-4 \
+    --use_gcn False \
+    --learning_rate 3e-4 \
     --beam_size 1 \
-    --save_checkpoint_every 12000 \
-    --batch_size 8 \
+    --save_checkpoint_every 10000 \
+    --batch_size 10 \
     --num_worker 4 \
     --input_encoding_size 1024 \
     --rnn_size 1024 \
@@ -37,8 +37,8 @@ python train3.py --id $id \
     --max_epochs 40
 
 python train3.py --id $id \
-    --use_gcn True \
-    --batch_size 8 \
+    --use_gcn False \
+    --batch_size 10 \
     --beam_size 1 \
     --input_encoding_size 1024 \
     --rnn_size 1024 \

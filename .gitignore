@@ -11,3 +11,4 @@ log/*
 vis/*
 *.log
 debug*
+checkpoint_ResNet_epoch_22.pth.tar

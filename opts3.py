@@ -98,7 +98,7 @@ def parse_opt():
     # Optimization: General
     parser.add_argument('--max_epochs', type=int, default=50,
                         help='number of epochs')
-    parser.add_argument('--batch_size', type=int, default=64,
+    parser.add_argument('--batch_size', type=int, default=12,
                         help='minibatch size')
     parser.add_argument('--num_worker', type=int, default=0,
                         help='num_worker of dataloader')
@@ -226,7 +226,8 @@ def add_eval_options(parser):
                         help='Dump json with predictions into vis folder? (1=yes,0=no)')
     parser.add_argument('--dump_path', type=int, default=1,
                         help='Write image paths along with predictions into vis json? (1=yes,0=no)')
-
+    parser.add_argument('--use_gcn', type=bool, default=False,
+                        help='use gcn')
     # Sampling options
     parser.add_argument('--sample_method', type=str, default='greedy',
                         help='greedy; sample; gumbel; top<int>, top<0-1>')

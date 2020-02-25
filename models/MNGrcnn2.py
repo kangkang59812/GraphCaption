@@ -458,7 +458,7 @@ class GRCNN(nn.Module):
         self.node2node_transform = nn.ModuleList()
         self.node2rela_transform = nn.ModuleList()
         self.rela_transform = nn.ModuleList()
-
+        self.p = 0.
         for i in range(self.feat_update_step):
             self.node2node_transform.append(
                 nn.ModuleList())
@@ -471,9 +471,11 @@ class GRCNN(nn.Module):
         self.node2node_transform[0].append(
             nn.Linear(self.node_dim, self.node_dim)
         )
+
         self.node2node_transform[0].append(
             nn.Linear(self.node_dim, self.node_dim)
         )
+
         self.node2node_transform[1].append(
             nn.Linear(self.node_dim, self.node_dim)
         )
@@ -523,7 +525,7 @@ class GRCNN(nn.Module):
             self.node2rela_transform[0][0], torch.bmm(rela_n2r, rela), p_att_masks)
 
         node_step1 = F.dropout(
-            F.relu(node + neighbors11_feat + neighbors12_feat + node2rela_feat1), p=0.3)
+            F.relu(node + neighbors11_feat +  neighbors12_feat + node2rela_feat1), p=self.p)
 
         rela_sub_feat1 = pack_wrapper(
             self.rela_transform[0][0], torch.bmm(rela_sub, node), p_rela_masks)
@@ -531,7 +533,7 @@ class GRCNN(nn.Module):
             self.rela_transform[0][1], torch.bmm(rela_obj, node), p_rela_masks)
 
         rela_step1 = F.dropout(
-            F.relu(rela+rela_sub_feat1+rela_obj_feat1), p=0.3)
+            F.relu(rela+rela_sub_feat1+rela_obj_feat1), p=self.p)
         # step 1 end
 
         # step 2
@@ -548,7 +550,7 @@ class GRCNN(nn.Module):
             self.node2rela_transform[1][0], torch.bmm(rela_n2r, rela_step1), p_att_masks)
 
         node_step2 = F.dropout(
-            F.relu(node_step1 + neighbors21_feat + node2rela_feat2), p=0.3)
+            F.relu(node_step1 + neighbors21_feat + node2rela_feat2), p=self.p)
 
         rela_sub_feat2 = pack_wrapper(
             self.rela_transform[1][0], torch.bmm(rela_sub, node_step1), p_rela_masks)
@@ -556,7 +558,7 @@ class GRCNN(nn.Module):
             self.rela_transform[1][1], torch.bmm(rela_obj, node_step1), p_rela_masks)
 
         rela_step2 = F.dropout(
-            F.relu(rela_step1+rela_sub_feat2+rela_obj_feat2), p=0.3)
+            F.relu(rela_step1+rela_sub_feat2+rela_obj_feat2), p=self.p)
         # step 2 end
 
         return node_step2, rela_step2

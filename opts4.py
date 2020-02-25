@@ -204,7 +204,7 @@ def add_eval_options(parser):
                         help='how many images to use when periodically evaluating the loss? (-1 = all)')
     parser.add_argument('--language_eval', type=int, default=0,
                         help='Evaluate language as well (1 = yes, 0 = no)? BLEU/CIDEr/METEOR/ROUGE_L? requires coco-caption code from Github.')
-    parser.add_argument('--dump_images', type=int, default=1,
+    parser.add_argument('--dump_images', type=int, default=0,
                         help='Dump images into vis/imgs folder for vis? (1=yes,0=no)')
     parser.add_argument('--dump_json', type=int, default=1,
                         help='Dump json with predictions into vis folder? (1=yes,0=no)')
@@ -214,7 +214,7 @@ def add_eval_options(parser):
     # Sampling options
     parser.add_argument('--sample_method', type=str, default='greedy',
                         help='greedy; sample; gumbel; top<int>, top<0-1>')
-    parser.add_argument('--beam_size', type=int, default=2,
+    parser.add_argument('--beam_size', type=int, default=3,
                         help='indicates number of beams in beam search. Usually 2 or 3 works well. More is not better. Set this to 1 for faster runtime but a bit worse performance.')
     parser.add_argument('--max_length', type=int, default=20,
                         help='Maximum length during sampling')
@@ -238,15 +238,19 @@ def add_eval_options(parser):
     parser.add_argument('--image_root', type=str, default='',
                         help='In case the image paths have to be preprended with a root path to an image folder')
     # For evaluation on MSCOCO images from some split:
-    parser.add_argument('--input_fc_dir', type=str, default='',
+    # parser.add_argument('--input_fc_dir', type=str, default='',
+    #                     help='path to the h5file containing the preprocessed dataset')
+    # parser.add_argument('--input_att_dir', type=str, default='',
+    #                     help='path to the h5file containing the preprocessed dataset')
+    parser.add_argument('--input_fc_dir', type=str, default='/home/lkk/code/self-critical.pytorch/data/testcocobu_fc',
                         help='path to the h5file containing the preprocessed dataset')
-    parser.add_argument('--input_att_dir', type=str, default='',
+    parser.add_argument('--input_att_dir', type=str, default='/home/lkk/code/self-critical.pytorch/data/testcocobu_att',
                         help='path to the h5file containing the preprocessed dataset')
     parser.add_argument('--input_box_dir', type=str, default='',
                         help='path to the h5file containing the preprocessed dataset')
     parser.add_argument('--input_label_h5', type=str, default='',
                         help='path to the h5file containing the preprocessed dataset')
-    parser.add_argument('--input_json', type=str, default='',
+    parser.add_argument('--input_json', type=str, default='/home/lkk/code/self-critical.pytorch/data/cocotalktest.json',
                         help='path to the json file containing additional info and vocab. empty = fetch from model checkpoint.')
     parser.add_argument('--split', type=str, default='test',
                         help='if running on MSCOCO images, which split to use: val|test|train')

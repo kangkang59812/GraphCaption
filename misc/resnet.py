@@ -51,7 +51,7 @@ def resnet50(pretrained=False):
     return model
 
 
-def resnet101(pretrained=True):
+def resnet101(pretrained=False):
     """Constructs a ResNet-101 model.
 
     Args:

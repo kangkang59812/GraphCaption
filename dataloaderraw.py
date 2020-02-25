@@ -111,7 +111,7 @@ class DataLoaderRaw():
             img = preprocess(img)
             with torch.no_grad():
                 tmp_fc, tmp_att = self.my_resnet(img)
-
+            
             fc_batch[i] = tmp_fc.data.cpu().float().numpy()
             att_batch[i] = tmp_att.data.cpu().float().numpy()
 

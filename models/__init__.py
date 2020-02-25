@@ -18,6 +18,8 @@ from .VSUAModel import VSUAModel
 from .MNGrcnn import MNGrcnn
 from .AoAModel import AoAModel
 from .MNGrcnn2 import MNGrcnn as MNGrcnn2
+from .PLSTM import PLSTM
+
 
 def setup(opt):
     if opt.caption_model == 'fc':
@@ -64,6 +66,8 @@ def setup(opt):
         model = MNGrcnn2(opt)
     elif opt.caption_model == 'aoa':
         model = AoAModel(opt)
+    elif opt.caption_model == 'plstm':
+        model = PLSTM(opt)
     else:
         raise Exception(
             "Caption model not supported: {}".format(opt.caption_model))
